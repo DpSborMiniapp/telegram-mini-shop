@@ -27,8 +27,8 @@
         }
         .top-nav button {
             background: transparent;
-            color: #0088cc;
-            border: 1px solid #0088cc;
+            color: #28a745;
+            border: 1px solid #28a745;
             padding: 8px 15px;
             border-radius: 5px;
             cursor: pointer;
@@ -36,7 +36,7 @@
             width: 30%;
         }
         .top-nav button:hover {
-            background: #0088cc;
+            background: #28a745;
             color: white;
         }
         h1 { margin: 10px 0; }
@@ -57,7 +57,7 @@
         }
         .order-id {
             font-weight: bold;
-            color: #0088cc;
+            color: #28a745;
         }
         .order-status {
             padding: 4px 8px;
@@ -107,9 +107,9 @@
             position: fixed;
             bottom: 20px;
             right: 20px;
-            background: #0088cc;
-            color: white;
-            border: none;
+            background: white;
+            color: #28a745;
+            border: 2px solid #28a745;
             border-radius: 50%;
             width: 60px;
             height: 60px;
@@ -153,7 +153,7 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        const userId = tg.initDataUnsafe?.user?.id || 1; // реальный ID или заглушка
+        const userId = tg.initDataUnsafe?.user?.id || 1;
 
         async function loadOrders() {
             const response = await fetch(`/api/orders/${userId}`);
@@ -180,6 +180,7 @@
             orders.sort((a, b) => b.id - a.id);
 
             orders.forEach(order => {
+                // Приводим статусы к отображаемым названиям
                 let displayStatus = order.status;
                 if (displayStatus === 'новый') displayStatus = 'Активный';
                 if (displayStatus === 'completed') displayStatus = 'Завершен';
@@ -211,6 +212,11 @@
                     } else if (contact.address) {
                         infoHtml += `<div><strong>Адрес доставки:</strong> ${contact.address}</div>`;
                     }
+
+                    // Если есть username, покажем его
+                    if (contact.username) {
+                        infoHtml += `<div><strong>Username:</strong> @${contact.username}</div>`;
+                    }
                 }
 
                 const canCancel = order.status === 'Активный' || order.status === 'новый';
@@ -218,7 +224,6 @@
                     ? `<button class="cancel-button" onclick="cancelOrder(${order.id})">Отменить заказ</button>`
                     : '';
 
-                // Форматируем дату: только день и месяц (например, "25 февраля")
                 let formattedDate = 'Неизвестно';
                 if (order.created_at) {
                     const date = new Date(order.created_at);
@@ -269,4 +274,3 @@
     </script>
 </body>
 </html>
-
