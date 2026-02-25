@@ -203,14 +203,23 @@ app.get('/api/pickup-locations', async (req, res) => {
   }
 });
 
-// ========== ОФОРМЛЕНИЕ ЗАКАЗА С ЗАЩИТОЙ ОТ ДУБЛИКАТОВ ==========
 app.post('/api/order', async (req, res) => {
-  const { userId, contact } = req.body;
+  const { userId, contact, requestId } = req.body;
   const numUserId = parseInt(userId, 10);
   const address = contact.address;
 
+  if (!requestId) {
+    return res.status(400).json({ error: 'Missing requestId' });
+  }
+
   try {
-    // Получаем seller_id и address_id по адресу
+    // Проверка на уникальность requestId
+    const existing = await pool.query('SELECT id FROM orders WHERE request_id = $1', [requestId]);
+    if (existing.rows.length > 0) {
+      console.log(`⚠️ Дублирующийся запрос с requestId ${requestId} отклонён`);
+      return res.status(409).json({ error: 'Duplicate order' });
+    }
+
     const addrResult = await pool.query('SELECT id, seller_id FROM pickup_locations WHERE address = $1', [address]);
     if (addrResult.rows.length === 0) {
       return res.status(400).json({ error: 'Invalid pickup address' });
@@ -218,7 +227,6 @@ app.post('/api/order', async (req, res) => {
     const address_id = addrResult.rows[0].id;
     const seller_id = addrResult.rows[0].seller_id;
 
-    // Получаем корзину
     const cartResult = await pool.query(`
       SELECT c.product_id, c.quantity, c.price_at_time, p.name
       FROM carts c
@@ -242,34 +250,21 @@ app.post('/api/order', async (req, res) => {
       };
     });
 
-    // 🔍 ПРОВЕРКА НА ДУБЛИКАТ: одинаковый состав заказа за последние 10 секунд
     const itemsJson = JSON.stringify(orderItems);
-    const duplicateCheck = await pool.query(
-      `SELECT id FROM orders 
-       WHERE user_id = $1 
-         AND items = $2 
-         AND created_at > NOW() - INTERVAL '10 seconds'`,
-      [numUserId, itemsJson]
-    );
-    if (duplicateCheck.rows.length > 0) {
-      console.log('⚠️ Обнаружен дублирующийся заказ, отклонён');
-      return res.status(409).json({ error: 'Duplicate order' });
-    }
+    const contactJson = JSON.stringify(contact);
 
-    // Вставляем заказ
     const insertResult = await pool.query(`
-      INSERT INTO orders (user_id, seller_id, address_id, items, total, contact, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO orders (user_id, seller_id, address_id, items, total, contact, status, request_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING id
-    `, [numUserId, seller_id, address_id, itemsJson, total, JSON.stringify(contact), 'Активный']);
+    `, [numUserId, seller_id, address_id, itemsJson, total, contactJson, 'Активный', requestId]);
 
     const orderId = insertResult.rows[0].id;
 
     await pool.query('DELETE FROM carts WHERE user_id = $1', [numUserId]);
 
-    console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact, seller_id, address_id });
+    console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact, seller_id, address_id, requestId });
 
-    // Отправка заказа в бота
     if (process.env.BOT_URL) {
       const botOrderData = {
         userId: numUserId,
