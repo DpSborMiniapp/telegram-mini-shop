@@ -141,6 +141,7 @@ app.put('/api/order/:orderId', async (req, res) => {
   }
 
   try {
+    // Получаем текущий статус и seller_id
     const order = await pool.query('SELECT status, seller_id FROM orders WHERE id = $1', [orderId]);
     if (order.rows.length === 0) {
       console.log(`[CANCEL] Order ${orderId} not found`);
@@ -151,6 +152,7 @@ app.put('/api/order/:orderId', async (req, res) => {
     const seller_id = order.rows[0].seller_id;
     console.log(`[CANCEL] Current status: ${currentStatus}, seller_id: ${seller_id}`);
 
+    // Проверяем, активен ли заказ (может быть "Активный", "active" или "новый")
     const isActive = currentStatus === 'Активный' || currentStatus === 'active' || currentStatus === 'новый';
     if (!isActive && status !== currentStatus) {
       console.log(`[CANCEL] Cannot change non-active order ${orderId} from ${currentStatus} to ${status}`);
@@ -159,30 +161,33 @@ app.put('/api/order/:orderId', async (req, res) => {
 
     await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
     console.log(`[CANCEL] Order ${orderId} updated to ${status}`);
-
-    // Уведомление бота об отмене
-    if (status === 'Отменен' && process.env.BOT_URL && seller_id) {
-      const cancelData = {
-        orderId: orderId,
-        userId: userId, // или можно получить из запроса, но у нас есть userId из order? лучше добавить в SELECT user_id
-        sellerId: seller_id
-      };
-      // Получим user_id из заказа (нужен в SELECT)
-      const userResult = await pool.query('SELECT user_id FROM orders WHERE id = $1', [orderId]);
-      if (userResult.rows.length > 0) {
-        cancelData.userId = userResult.rows[0].user_id;
-      }
-      fetch(`${process.env.BOT_URL}/api/order-cancelled`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cancelData)
-      })
-      .then(response => response.json())
-      .then(data => console.log('✅ Уведомление об отмене отправлено в бота:', data))
-      .catch(err => console.error('❌ Ошибка отправки уведомления об отмене:', err));
-    }
-
     res.json({ success: true });
+
+    // Если статус изменился на "Отменен", отправляем уведомление боту
+    if (status === 'Отменен' && process.env.BOT_URL && seller_id) {
+      try {
+        // Получаем user_id этого заказа
+        const userResult = await pool.query('SELECT user_id FROM orders WHERE id = $1', [orderId]);
+        if (userResult.rows.length === 0) return;
+        const user_id = userResult.rows[0].user_id;
+
+        const cancelData = {
+          orderId: orderId,
+          userId: user_id,
+          sellerId: seller_id
+        };
+        fetch(`${process.env.BOT_URL}/api/order-cancelled`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cancelData)
+        })
+        .then(response => response.json())
+        .then(data => console.log('✅ Уведомление об отмене отправлено в бота:', data))
+        .catch(err => console.error('❌ Ошибка отправки уведомления об отмене:', err));
+      } catch (err) {
+        console.error('❌ Ошибка при подготовке уведомления об отмене:', err);
+      }
+    }
 
   } catch (err) {
     console.error(err);
@@ -251,6 +256,7 @@ app.post('/api/order', async (req, res) => {
 
     console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact, seller_id, address_id });
 
+    // Отправка заказа в бота
     if (process.env.BOT_URL) {
       const botOrderData = {
         userId: numUserId,
