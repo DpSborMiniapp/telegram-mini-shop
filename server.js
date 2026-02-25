@@ -11,7 +11,6 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// Логирование запросов
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
   next();
@@ -19,7 +18,6 @@ app.use((req, res, next) => {
 
 // ==================== API ====================
 
-// Получить все товары
 app.get('/api/products', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM products');
@@ -30,7 +28,6 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
-// Получить корзину пользователя
 app.get('/api/cart/:userId', async (req, res) => {
   const userId = parseInt(req.params.userId, 10);
   try {
@@ -58,7 +55,6 @@ app.get('/api/cart/:userId', async (req, res) => {
   }
 });
 
-// Добавить товар в корзину (или увеличить количество)
 app.post('/api/cart/add', async (req, res) => {
   const { userId, productId, quantity } = req.body;
   const numUserId = parseInt(userId, 10);
@@ -86,7 +82,6 @@ app.post('/api/cart/add', async (req, res) => {
   }
 });
 
-// Обновить количество товара в корзине (задать конкретное значение)
 app.post('/api/cart/update', async (req, res) => {
   const { userId, productId, quantity } = req.body;
   const numUserId = parseInt(userId, 10);
@@ -111,7 +106,6 @@ app.post('/api/cart/update', async (req, res) => {
   }
 });
 
-// Удалить товар из корзины
 app.delete('/api/cart/remove', async (req, res) => {
   const { userId, productId } = req.body;
   try {
@@ -123,7 +117,6 @@ app.delete('/api/cart/remove', async (req, res) => {
   }
 });
 
-// Получить заказы пользователя
 app.get('/api/orders/:userId', async (req, res) => {
   const userId = parseInt(req.params.userId, 10);
   try {
@@ -135,7 +128,6 @@ app.get('/api/orders/:userId', async (req, res) => {
   }
 });
 
-// Обновить статус заказа (например, отмена)
 app.put('/api/order/:orderId', async (req, res) => {
   const orderId = parseInt(req.params.orderId, 10);
   const { status } = req.body;
@@ -160,7 +152,6 @@ app.put('/api/order/:orderId', async (req, res) => {
   }
 });
 
-// Получить все точки самовывоза (для страницы оформления заказа)
 app.get('/api/pickup-locations', async (req, res) => {
   try {
     const result = await pool.query(
@@ -173,7 +164,6 @@ app.get('/api/pickup-locations', async (req, res) => {
   }
 });
 
-// Оформить заказ
 app.post('/api/order', async (req, res) => {
   const { userId, contact } = req.body;
   const numUserId = parseInt(userId, 10);
@@ -214,7 +204,7 @@ app.post('/api/order', async (req, res) => {
 
     console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact });
 
-    // ========== ОТПРАВКА ЗАКАЗА В БОТА ==========
+    // Отправка заказа в бота
     if (process.env.BOT_URL) {
       const botOrderData = {
         userId: numUserId,
@@ -224,7 +214,7 @@ app.post('/api/order', async (req, res) => {
         address: contact.address,
         paymentMethod: contact.paymentMethod,
         deliveryType: contact.deliveryType,
-        contact: contact // передаём весь объект contact
+        contact: contact
       };
 
       fetch(`${process.env.BOT_URL}/api/new-order`, {
@@ -236,7 +226,6 @@ app.post('/api/order', async (req, res) => {
       .then(data => console.log('✅ Заказ отправлен в бота:', data))
       .catch(err => console.error('❌ Ошибка отправки в бота:', err));
     }
-    // =============================================
 
     res.json({ orderId });
 
@@ -246,7 +235,6 @@ app.post('/api/order', async (req, res) => {
   }
 });
 
-// ==================== Запуск сервера ====================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Сервер запущен на порту ${PORT}`);
