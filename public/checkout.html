@@ -308,11 +308,17 @@
                 });
 
                 if (response.ok) {
+                    const result = await response.json();
                     window.location.href = 'orders.html';
                 } else {
-                    console.error('Ошибка при оформлении заказа');
-                    alert('Ошибка при оформлении заказа. Попробуйте ещё раз.');
-                    e.target.disabled = false; // разблокируем, чтобы можно было повторить
+                    const error = await response.json();
+                    console.error('Ошибка при оформлении заказа:', error);
+                    if (error.error === 'Duplicate order') {
+                        alert('Заказ уже был оформлен. Пожалуйста, подождите.');
+                    } else {
+                        alert('Ошибка при оформлении заказа. Попробуйте ещё раз.');
+                    }
+                    e.target.disabled = false;
                 }
             } catch (err) {
                 console.error(err);
