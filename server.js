@@ -6,19 +6,15 @@ const app = express();
 app.use(express.json());
 app.use(express.static('public'));
 
-// Подключение к PostgreSQL (Supabase)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// Логирование запросов
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
   next();
 });
-
-// ==================== API ====================
 
 // Получить все товары
 app.get('/api/products', async (req, res) => {
@@ -59,7 +55,7 @@ app.get('/api/cart/:userId', async (req, res) => {
   }
 });
 
-// Добавить товар в корзину (или увеличить количество)
+// Добавить товар в корзину
 app.post('/api/cart/add', async (req, res) => {
   const { userId, productId, quantity } = req.body;
   const numUserId = parseInt(userId, 10);
@@ -87,7 +83,7 @@ app.post('/api/cart/add', async (req, res) => {
   }
 });
 
-// Обновить количество товара в корзине (задать конкретное значение)
+// Обновить количество товара в корзине
 app.post('/api/cart/update', async (req, res) => {
   const { userId, productId, quantity } = req.body;
   const numUserId = parseInt(userId, 10);
@@ -136,7 +132,7 @@ app.get('/api/orders/:userId', async (req, res) => {
   }
 });
 
-// Обновить статус заказа (например, отмена)
+// Обновить статус заказа (отмена)
 app.put('/api/order/:orderId', async (req, res) => {
   const orderId = parseInt(req.params.orderId, 10);
   const { status } = req.body;
@@ -160,60 +156,6 @@ app.put('/api/order/:orderId', async (req, res) => {
     res.status(500).json({ error: 'Database error' });
   }
 });
-
-// --- НОВЫЙ МАРШРУТ: Получить все точки самовывоза ---
-app.get('/api/pickup-locations', async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT * FROM pickup_locations ORDER BY district, sort_order'
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-// Функция отправки уведомления в Telegram
-async function sendTelegramNotification(order) {
-  const botToken = process.env.BOT_TOKEN;
-  const chatId = process.env.CHANNEL_ID;
-  if (!botToken || !chatId) {
-    console.error('Telegram credentials missing');
-    return;
-  }
-
-  let message = `<b>🆕 Новый заказ #${order.id}</b>\n\n`;
-  message += `<b>👤 Клиент:</b> ${order.contact.name}\n`;
-  message += `<b>📞 Телефон:</b> ${order.contact.phone}\n`;
-  message += `<b>📍 Адрес:</b> ${order.contact.address}\n`;
-  message += `<b>💰 Сумма:</b> ${order.total} руб.\n`;
-
-  let deliveryText = '';
-  if (order.contact.deliveryType === 'pickup') deliveryText = 'Самовывоз';
-  else if (order.contact.deliveryType === 'free') deliveryText = 'Бесплатная доставка от 15 000 руб';
-  else if (order.contact.deliveryType === 'courier') deliveryText = 'Доставка курьером';
-  message += `<b>🚚 Доставка:</b> ${deliveryText}\n`;
-
-  let paymentText = order.contact.paymentMethod === 'cash' ? 'Наличные' : 'Перевод по номеру';
-  message += `<b>💳 Оплата:</b> ${paymentText}\n\n`;
-
-  message += `<b>📦 Товары:</b>\n`;
-  order.items.forEach(item => {
-    message += `   • ${item.name} x${item.quantity} = ${item.price * item.quantity} руб.\n`;
-  });
-
-  try {
-    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' })
-    });
-  } catch (err) {
-    console.error('Telegram send error:', err);
-  }
-}
 
 // Оформить заказ
 app.post('/api/order', async (req, res) => {
@@ -254,24 +196,15 @@ app.post('/api/order', async (req, res) => {
 
     await pool.query('DELETE FROM carts WHERE user_id = $1', [numUserId]);
 
-    // Отправляем уведомление (не ждём)
-    sendTelegramNotification({
-      id: orderId,
-      user_id: numUserId,
-      items: orderItems,
-      total,
-      contact,
-      status: 'Активный'
-    }).catch(e => console.error(e));
-
+    console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact });
     res.json({ orderId });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Database error' });
   }
 });
 
-// ==================== Запуск сервера ====================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Сервер запущен на порту ${PORT}`);
