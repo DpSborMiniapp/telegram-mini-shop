@@ -141,7 +141,6 @@ app.put('/api/order/:orderId', async (req, res) => {
   }
 
   try {
-    // Получаем текущий статус и seller_id
     const order = await pool.query('SELECT status, seller_id FROM orders WHERE id = $1', [orderId]);
     if (order.rows.length === 0) {
       console.log(`[CANCEL] Order ${orderId} not found`);
@@ -152,7 +151,6 @@ app.put('/api/order/:orderId', async (req, res) => {
     const seller_id = order.rows[0].seller_id;
     console.log(`[CANCEL] Current status: ${currentStatus}, seller_id: ${seller_id}`);
 
-    // Проверяем, активен ли заказ (может быть "Активный", "active" или "новый")
     const isActive = currentStatus === 'Активный' || currentStatus === 'active' || currentStatus === 'новый';
     if (!isActive && status !== currentStatus) {
       console.log(`[CANCEL] Cannot change non-active order ${orderId} from ${currentStatus} to ${status}`);
@@ -163,10 +161,8 @@ app.put('/api/order/:orderId', async (req, res) => {
     console.log(`[CANCEL] Order ${orderId} updated to ${status}`);
     res.json({ success: true });
 
-    // Если статус изменился на "Отменен", отправляем уведомление боту
     if (status === 'Отменен' && process.env.BOT_URL && seller_id) {
       try {
-        // Получаем user_id этого заказа
         const userResult = await pool.query('SELECT user_id FROM orders WHERE id = $1', [orderId]);
         if (userResult.rows.length === 0) return;
         const user_id = userResult.rows[0].user_id;
@@ -207,6 +203,7 @@ app.get('/api/pickup-locations', async (req, res) => {
   }
 });
 
+// ========== ОФОРМЛЕНИЕ ЗАКАЗА С ЗАЩИТОЙ ОТ ДУБЛИКАТОВ ==========
 app.post('/api/order', async (req, res) => {
   const { userId, contact } = req.body;
   const numUserId = parseInt(userId, 10);
@@ -221,6 +218,7 @@ app.post('/api/order', async (req, res) => {
     const address_id = addrResult.rows[0].id;
     const seller_id = addrResult.rows[0].seller_id;
 
+    // Получаем корзину
     const cartResult = await pool.query(`
       SELECT c.product_id, c.quantity, c.price_at_time, p.name
       FROM carts c
@@ -244,11 +242,26 @@ app.post('/api/order', async (req, res) => {
       };
     });
 
+    // 🔍 ПРОВЕРКА НА ДУБЛИКАТ: одинаковый состав заказа за последние 10 секунд
+    const itemsJson = JSON.stringify(orderItems);
+    const duplicateCheck = await pool.query(
+      `SELECT id FROM orders 
+       WHERE user_id = $1 
+         AND items = $2 
+         AND created_at > NOW() - INTERVAL '10 seconds'`,
+      [numUserId, itemsJson]
+    );
+    if (duplicateCheck.rows.length > 0) {
+      console.log('⚠️ Обнаружен дублирующийся заказ, отклонён');
+      return res.status(409).json({ error: 'Duplicate order' });
+    }
+
+    // Вставляем заказ
     const insertResult = await pool.query(`
       INSERT INTO orders (user_id, seller_id, address_id, items, total, contact, status)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING id
-    `, [numUserId, seller_id, address_id, JSON.stringify(orderItems), total, JSON.stringify(contact), 'Активный']);
+    `, [numUserId, seller_id, address_id, itemsJson, total, JSON.stringify(contact), 'Активный']);
 
     const orderId = insertResult.rows[0].id;
 
