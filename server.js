@@ -163,8 +163,9 @@ app.put('/api/order/:orderId', async (req, res) => {
 // Получить все точки самовывоза (для страницы оформления заказа)
 app.get('/api/pickup-locations', async (req, res) => {
   try {
+    // В таблице pickup_locations поля: text (район), address (адрес), sort_order
     const result = await pool.query(
-      'SELECT district, address_text as address, sort_order FROM pickup_locations ORDER BY district, sort_order'
+      'SELECT text as district, address, sort_order FROM pickup_locations ORDER BY text, sort_order'
     );
     res.json(result.rows);
   } catch (err) {
