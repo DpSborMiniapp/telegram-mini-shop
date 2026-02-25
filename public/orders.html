@@ -6,7 +6,6 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <title>Мои заказы</title>
     <style>
-        /* стили без изменений, как в предыдущей версии */
         body {
             font-family: Arial, sans-serif;
             padding: 10px;
@@ -154,21 +153,15 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        const userId = tg.initDataUnsafe?.user?.id;
-        if (!userId) {
-            alert('Ошибка: не удалось определить пользователя.');
-        }
-        console.log('Current userId:', userId);
+        const userId = tg.initDataUnsafe?.user?.id || 1; // реальный ID или заглушка
 
         async function loadOrders() {
-            if (!userId) return;
             const response = await fetch(`/api/orders/${userId}`);
             const orders = await response.json();
             renderOrders(orders);
         }
 
         async function loadCartCount() {
-            if (!userId) return;
             const res = await fetch(`/api/cart/${userId}`);
             const cart = await res.json();
             const totalItems = cart.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -224,6 +217,15 @@
                     ? `<button class="cancel-button" onclick="cancelOrder(${order.id})">Отменить заказ</button>`
                     : '';
 
+                // Форматируем дату: только день и месяц (например, "25 февраля")
+                let formattedDate = 'Неизвестно';
+                if (order.created_at) {
+                    const date = new Date(order.created_at);
+                    if (!isNaN(date)) {
+                        formattedDate = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+                    }
+                }
+
                 const card = document.createElement('div');
                 card.className = 'order-card';
                 card.innerHTML = `
@@ -237,7 +239,7 @@
                     ${infoHtml ? `<div class="info-block">${infoHtml}</div>` : ''}
                     <div class="order-total">Итого: ${order.total} руб.</div>
                     <div style="font-size: 0.9em; color: #666;">
-                        Дата: ${new Date(order.createdAt).toLocaleString()}
+                        Дата: ${formattedDate}
                     </div>
                     ${cancelButton}
                 `;
@@ -247,7 +249,6 @@
 
         async function cancelOrder(orderId) {
             if (!confirm('Вы уверены, что хотите отменить заказ?')) return;
-            if (!userId) return;
 
             const response = await fetch(`/api/order/${orderId}`, {
                 method: 'PUT',
