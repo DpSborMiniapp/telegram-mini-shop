@@ -128,26 +128,43 @@ app.get('/api/orders/:userId', async (req, res) => {
   }
 });
 
+// Обработчик отмены заказа
 app.put('/api/order/:orderId', async (req, res) => {
   const orderId = parseInt(req.params.orderId, 10);
   const { status } = req.body;
 
+  console.log(`[CANCEL] Received PUT /api/order/${orderId} with status: ${status}`);
+
   const allowed = ['Активный', 'Завершен', 'Отменен'];
   if (!allowed.includes(status)) {
+    console.log(`[CANCEL] Invalid status: ${status}`);
     return res.status(400).json({ error: 'Invalid status' });
   }
 
   try {
+    // Получаем текущий заказ
     const order = await pool.query('SELECT status FROM orders WHERE id = $1', [orderId]);
-    if (order.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
-    if (order.rows[0].status !== 'Активный' && status !== order.rows[0].status) {
+    if (order.rows.length === 0) {
+      console.log(`[CANCEL] Order ${orderId} not found`);
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const currentStatus = order.rows[0].status;
+    console.log(`[CANCEL] Current status: ${currentStatus}`);
+
+    // Проверяем, можно ли изменить
+    if (currentStatus !== 'Активный' && status !== currentStatus) {
+      console.log(`[CANCEL] Cannot change non-active order ${orderId} from ${currentStatus} to ${status}`);
       return res.status(400).json({ error: 'Cannot change non-active order' });
     }
 
+    // Обновляем статус
     await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
+    console.log(`[CANCEL] Order ${orderId} updated to ${status}`);
+
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
+    console.error(`[CANCEL] Error:`, err);
     res.status(500).json({ error: 'Database error' });
   }
 });
