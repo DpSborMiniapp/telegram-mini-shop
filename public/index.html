@@ -6,6 +6,7 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <title>Магазин - Каталог</title>
     <style>
+        /* стили оставлены без изменений, как были */
         body {
             font-family: Arial, sans-serif;
             padding: 10px;
@@ -137,7 +138,14 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        const userId = 1;
+        // Используем только реальный ID из Telegram. Если его нет (например, открыли не в Telegram) — показываем ошибку.
+        const userId = tg.initDataUnsafe?.user?.id;
+        if (!userId) {
+            alert('Ошибка: не удалось определить пользователя. Откройте приложение через Telegram.');
+            // Можно также перенаправить на страницу ошибки
+        }
+
+        console.log('Current userId:', userId);
 
         let products = [];
         let cart = { items: [] };
@@ -155,6 +163,7 @@
         }
 
         async function loadCart() {
+            if (!userId) return;
             const res = await fetch(`/api/cart/${userId}`);
             cart = await res.json();
         }
@@ -176,7 +185,6 @@
                 div.className = 'product';
                 div.setAttribute('data-product-id', product.id);
 
-                // Если есть своё фото — используем его, иначе picsum
                 const imageUrl = product.image || 'https://picsum.photos/300/300?random=' + product.id;
 
                 let controlsHtml = '';
@@ -211,6 +219,7 @@
         }
 
         async function addToCart(productId) {
+            if (!userId) return;
             await fetch('/api/cart/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -239,6 +248,7 @@
         }
 
         async function updateQuantity(productId, newQuantity) {
+            if (!userId) return;
             await fetch('/api/cart/update', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -250,6 +260,7 @@
         }
 
         async function removeItem(productId) {
+            if (!userId) return;
             await fetch('/api/cart/remove', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
