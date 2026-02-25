@@ -6,6 +6,7 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <title>Оформление заказа</title>
     <style>
+        /* стили без изменений, как в предыдущей версии */
         body {
             font-family: Arial, sans-serif;
             padding: 10px;
@@ -122,16 +123,13 @@
             <label><input type="radio" name="delivery" value="courier"> Доставка курьером</label>
         </div>
 
-        <!-- Блок самовывоза теперь пустой – заполняется динамически -->
         <div id="pickup-block" class="delivery-block" style="display: block;"></div>
 
-        <!-- Блок бесплатной доставки -->
         <div id="free-delivery-block" class="delivery-block">
             <div>Укажите адрес</div>
             <input type="text" id="free-address" class="address-input" placeholder="Адрес доставки">
         </div>
 
-        <!-- Блок доставки курьером -->
         <div id="courier-block" class="delivery-block">
             <div class="notice">Доставка сервисом Яндекс за счет покупателя</div>
             <div>Укажите адрес</div>
@@ -150,19 +148,23 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        const userId = 1; // замените на tg.initDataUnsafe?.user?.id в продакшене
+        const userId = tg.initDataUnsafe?.user?.id;
+        if (!userId) {
+            alert('Ошибка: не удалось определить пользователя.');
+        }
+        console.log('Current userId:', userId);
 
         let cart = null;
         let products = [];
-        let pickupLocations = []; // точки самовывоза из базы
+        let pickupLocations = [];
 
         async function loadData() {
             await loadProducts();
             await loadCart();
-            await loadPickupLocations(); // загружаем адреса
+            await loadPickupLocations();
             renderOrderSummary();
             updateCartCount();
-            renderPickupLocations(); // отрисовываем радиокнопки
+            renderPickupLocations();
         }
 
         async function loadProducts() {
@@ -171,6 +173,7 @@
         }
 
         async function loadCart() {
+            if (!userId) return;
             const res = await fetch(`/api/cart/${userId}`);
             cart = await res.json();
         }
@@ -214,12 +217,10 @@
             document.getElementById('cart-count').textContent = totalItems;
         }
 
-        // Отрисовка точек самовывоза по данным из базы
         function renderPickupLocations() {
             const container = document.getElementById('pickup-block');
             if (!container) return;
 
-            // Группируем по районам (district)
             const districts = {};
             pickupLocations.forEach(loc => {
                 if (!districts[loc.district]) districts[loc.district] = [];
@@ -237,7 +238,6 @@
             container.innerHTML = html;
         }
 
-        // Переключение блоков доставки
         const deliveryRadios = document.querySelectorAll('input[name="delivery"]');
         const pickupBlock = document.getElementById('pickup-block');
         const freeBlock = document.getElementById('free-delivery-block');
@@ -258,7 +258,6 @@
         });
         updateDeliveryBlocks();
 
-        // Обработка подтверждения заказа
         document.getElementById('confirm-button').addEventListener('click', async () => {
             const paymentMethod = document.querySelector('input[name="payment"]:checked').value;
             const deliveryType = document.querySelector('input[name="delivery"]:checked').value;
