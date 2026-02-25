@@ -150,7 +150,9 @@ app.put('/api/order/:orderId', async (req, res) => {
     const currentStatus = order.rows[0].status;
     console.log(`[CANCEL] Current status: ${currentStatus}`);
 
-    if (currentStatus !== 'Активный' && status !== currentStatus) {
+    // Проверяем, является ли заказ активным (может быть "Активный" или "active")
+    const isActive = currentStatus === 'Активный' || currentStatus === 'active' || currentStatus === 'новый';
+    if (!isActive && status !== currentStatus) {
       console.log(`[CANCEL] Cannot change non-active order ${orderId} from ${currentStatus} to ${status}`);
       return res.status(400).json({ error: 'Cannot change non-active order' });
     }
