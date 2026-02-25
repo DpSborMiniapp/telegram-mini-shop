@@ -6,13 +6,11 @@ const app = express();
 app.use(express.json());
 app.use(express.static('public'));
 
-// Подключение к PostgreSQL (Supabase)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// Логирование запросов
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
   next();
@@ -20,7 +18,6 @@ app.use((req, res, next) => {
 
 // ==================== API ====================
 
-// Получить все товары
 app.get('/api/products', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM products');
@@ -31,7 +28,6 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
-// Получить корзину пользователя
 app.get('/api/cart/:userId', async (req, res) => {
   const userId = parseInt(req.params.userId, 10);
   try {
@@ -59,7 +55,6 @@ app.get('/api/cart/:userId', async (req, res) => {
   }
 });
 
-// Добавить товар в корзину (или увеличить количество)
 app.post('/api/cart/add', async (req, res) => {
   const { userId, productId, quantity } = req.body;
   const numUserId = parseInt(userId, 10);
@@ -87,7 +82,6 @@ app.post('/api/cart/add', async (req, res) => {
   }
 });
 
-// Обновить количество товара в корзине
 app.post('/api/cart/update', async (req, res) => {
   const { userId, productId, quantity } = req.body;
   const numUserId = parseInt(userId, 10);
@@ -112,7 +106,6 @@ app.post('/api/cart/update', async (req, res) => {
   }
 });
 
-// Удалить товар из корзины
 app.delete('/api/cart/remove', async (req, res) => {
   const { userId, productId } = req.body;
   try {
@@ -124,7 +117,6 @@ app.delete('/api/cart/remove', async (req, res) => {
   }
 });
 
-// Получить заказы пользователя
 app.get('/api/orders/:userId', async (req, res) => {
   const userId = parseInt(req.params.userId, 10);
   try {
@@ -136,7 +128,6 @@ app.get('/api/orders/:userId', async (req, res) => {
   }
 });
 
-// Обновить статус заказа (отмена)
 app.put('/api/order/:orderId', async (req, res) => {
   const orderId = parseInt(req.params.orderId, 10);
   const { status } = req.body;
@@ -161,13 +152,11 @@ app.put('/api/order/:orderId', async (req, res) => {
   }
 });
 
-// Оформить заказ (с отправкой в бота)
 app.post('/api/order', async (req, res) => {
   const { userId, contact } = req.body;
   const numUserId = parseInt(userId, 10);
 
   try {
-    // Получаем корзину с ценами
     const cartResult = await pool.query(`
       SELECT c.product_id, c.quantity, c.price_at_time, p.name
       FROM carts c
@@ -191,7 +180,6 @@ app.post('/api/order', async (req, res) => {
       };
     });
 
-    // Сохраняем заказ в БД
     const insertResult = await pool.query(`
       INSERT INTO orders (user_id, items, total, contact, status)
       VALUES ($1, $2, $3, $4, $5)
@@ -200,32 +188,7 @@ app.post('/api/order', async (req, res) => {
 
     const orderId = insertResult.rows[0].id;
 
-    // Очищаем корзину
     await pool.query('DELETE FROM carts WHERE user_id = $1', [numUserId]);
-
-    // ========== ОТПРАВКА В БОТА ==========
-    if (process.env.BOT_URL) {
-      const botOrderData = {
-        userId: numUserId,
-        name: contact.name || 'Покупатель',
-        items: orderItems,
-        total: total,
-        address: contact.address,
-        paymentMethod: contact.paymentMethod,
-        deliveryType: contact.deliveryType
-      };
-
-      // Отправляем асинхронно, не ждём ответа
-      fetch(`${process.env.BOT_URL}/api/new-order`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(botOrderData)
-      })
-      .then(response => response.json())
-      .then(data => console.log('✅ Заказ отправлен в бота:', data))
-      .catch(err => console.error('❌ Ошибка отправки в бота:', err));
-    }
-    // =====================================
 
     console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact });
     res.json({ orderId });
@@ -236,7 +199,6 @@ app.post('/api/order', async (req, res) => {
   }
 });
 
-// ==================== Запуск сервера ====================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Сервер запущен на порту ${PORT}`);
