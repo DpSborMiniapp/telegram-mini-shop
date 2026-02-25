@@ -11,10 +11,13 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+// Логирование запросов
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
   next();
 });
+
+// ==================== API ====================
 
 // Получить все товары
 app.get('/api/products', async (req, res) => {
@@ -55,7 +58,7 @@ app.get('/api/cart/:userId', async (req, res) => {
   }
 });
 
-// Добавить товар в корзину
+// Добавить товар в корзину (или увеличить количество)
 app.post('/api/cart/add', async (req, res) => {
   const { userId, productId, quantity } = req.body;
   const numUserId = parseInt(userId, 10);
@@ -83,7 +86,7 @@ app.post('/api/cart/add', async (req, res) => {
   }
 });
 
-// Обновить количество товара в корзине
+// Обновить количество товара в корзине (задать конкретное значение)
 app.post('/api/cart/update', async (req, res) => {
   const { userId, productId, quantity } = req.body;
   const numUserId = parseInt(userId, 10);
@@ -132,7 +135,7 @@ app.get('/api/orders/:userId', async (req, res) => {
   }
 });
 
-// Обновить статус заказа (отмена)
+// Обновить статус заказа (например, отмена)
 app.put('/api/order/:orderId', async (req, res) => {
   const orderId = parseInt(req.params.orderId, 10);
   const { status } = req.body;
@@ -151,6 +154,19 @@ app.put('/api/order/:orderId', async (req, res) => {
 
     await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
     res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Получить все точки самовывоза (для страницы оформления заказа)
+app.get('/api/pickup-locations', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT district, address_text as address, sort_order FROM pickup_locations ORDER BY district, sort_order'
+    );
+    res.json(result.rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Database error' });
@@ -205,6 +221,7 @@ app.post('/api/order', async (req, res) => {
   }
 });
 
+// ==================== Запуск сервера ====================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Сервер запущен на порту ${PORT}`);
