@@ -68,6 +68,10 @@
             width: 100%;
             font-size: 16px;
         }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
         .notice { font-size: 0.9em; color: #666; margin: 5px 0; }
         .free-delivery-note {
             font-weight: bold;
@@ -159,7 +163,7 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        const userId = tg.initDataUnsafe?.user?.id || 1; // реальный ID или заглушка
+        const userId = tg.initDataUnsafe?.user?.id || 1;
 
         let cart = null;
         let products = [];
@@ -261,49 +265,59 @@
         });
         updateDeliveryBlocks();
 
-        document.getElementById('confirm-button').addEventListener('click', async () => {
-            const paymentMethod = document.querySelector('input[name="payment"]:checked').value;
-            const deliveryType = document.querySelector('input[name="delivery"]:checked').value;
+        const confirmBtn = document.getElementById('confirm-button');
+        confirmBtn.addEventListener('click', async (e) => {
+            e.target.disabled = true; // блокируем кнопку от повторного нажатия
+            try {
+                const paymentMethod = document.querySelector('input[name="payment"]:checked').value;
+                const deliveryType = document.querySelector('input[name="delivery"]:checked').value;
 
-            let address = '';
-            if (deliveryType === 'pickup') {
-                const pickupAddress = document.querySelector('input[name="pickup-address"]:checked');
-                if (!pickupAddress) {
-                    alert('Выберите адрес самовывоза');
-                    return;
+                let address = '';
+                if (deliveryType === 'pickup') {
+                    const pickupAddress = document.querySelector('input[name="pickup-address"]:checked');
+                    if (!pickupAddress) {
+                        alert('Выберите адрес самовывоза');
+                        e.target.disabled = false;
+                        return;
+                    }
+                    address = pickupAddress.value;
+                } else if (deliveryType === 'courier') {
+                    address = document.getElementById('courier-address').value.trim();
+                    if (!address) {
+                        alert('Введите адрес доставки');
+                        e.target.disabled = false;
+                        return;
+                    }
                 }
-                address = pickupAddress.value;
-            } else if (deliveryType === 'courier') {
-                address = document.getElementById('courier-address').value.trim();
-                if (!address) {
-                    alert('Введите адрес доставки');
-                    return;
+
+                const user = tg.initDataUnsafe?.user;
+                const contact = {
+                    name: user?.first_name + (user?.last_name ? ' ' + user?.last_name : '') || 'Покупатель',
+                    phone: '0000000000',
+                    address: address,
+                    paymentMethod: paymentMethod,
+                    deliveryType: deliveryType,
+                    username: user?.username,
+                    userId: user?.id
+                };
+
+                const response = await fetch('/api/order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId, contact })
+                });
+
+                if (response.ok) {
+                    window.location.href = 'orders.html';
+                } else {
+                    console.error('Ошибка при оформлении заказа');
+                    alert('Ошибка при оформлении заказа. Попробуйте ещё раз.');
+                    e.target.disabled = false; // разблокируем, чтобы можно было повторить
                 }
-            }
-
-            // Получаем данные пользователя из Telegram
-            const user = tg.initDataUnsafe?.user;
-            const contact = {
-                name: user?.first_name + (user?.last_name ? ' ' + user?.last_name : '') || 'Покупатель',
-                phone: '0000000000', // можно добавить поле в будущем
-                address: address,
-                paymentMethod: paymentMethod,
-                deliveryType: deliveryType,
-                username: user?.username,
-                userId: user?.id
-            };
-
-            const response = await fetch('/api/order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, contact })
-            });
-
-            if (response.ok) {
-                const result = await response.json();
-                window.location.href = 'orders.html';
-            } else {
-                console.error('Ошибка при оформлении заказа');
+            } catch (err) {
+                console.error(err);
+                alert('Произошла ошибка');
+                e.target.disabled = false;
             }
         });
 
