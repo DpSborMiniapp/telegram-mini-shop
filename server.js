@@ -208,7 +208,9 @@ app.post('/api/order', async (req, res) => {
   const numUserId = parseInt(userId, 10);
   const address = contact.address;
 
-  if (!requestId) {
+  // Проверка наличия requestId
+  if (!requestId || requestId.trim() === '') {
+    console.log('❌ Запрос без requestId отклонён');
     return res.status(400).json({ error: 'Missing requestId' });
   }
 
