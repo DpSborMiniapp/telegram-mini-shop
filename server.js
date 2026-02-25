@@ -11,12 +11,8 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// Логирование всех запросов с телом
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  if (req.method === 'POST' || req.method === 'PUT') {
-    console.log('Body:', JSON.stringify(req.body, null, 2));
-  }
+  console.log(`${req.method} ${req.url}`);
   next();
 });
 
@@ -132,7 +128,6 @@ app.get('/api/orders/:userId', async (req, res) => {
   }
 });
 
-// Обработчик отмены заказа
 app.put('/api/order/:orderId', async (req, res) => {
   const orderId = parseInt(req.params.orderId, 10);
   const { status } = req.body;
@@ -146,7 +141,6 @@ app.put('/api/order/:orderId', async (req, res) => {
   }
 
   try {
-    // Получаем текущий заказ
     const order = await pool.query('SELECT status FROM orders WHERE id = $1', [orderId]);
     if (order.rows.length === 0) {
       console.log(`[CANCEL] Order ${orderId} not found`);
@@ -156,25 +150,42 @@ app.put('/api/order/:orderId', async (req, res) => {
     const currentStatus = order.rows[0].status;
     console.log(`[CANCEL] Current status: ${currentStatus}`);
 
-    // Проверяем, можно ли изменить
     if (currentStatus !== 'Активный' && status !== currentStatus) {
       console.log(`[CANCEL] Cannot change non-active order ${orderId} from ${currentStatus} to ${status}`);
       return res.status(400).json({ error: 'Cannot change non-active order' });
     }
 
-    // Обновляем статус и получаем количество затронутых строк
-    const updateResult = await pool.query('UPDATE orders SET status = $1 WHERE id = $2 RETURNING id', [status, orderId]);
-    console.log(`[CANCEL] Updated rows: ${updateResult.rowCount}`);
+    await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
+    console.log(`[CANCEL] Order ${orderId} updated to ${status}`);
+    res.json({ success: true });
 
-    if (updateResult.rowCount === 1) {
-      console.log(`[CANCEL] Order ${orderId} updated to ${status}`);
-      res.json({ success: true });
-    } else {
-      console.error(`[CANCEL] Unexpected row count: ${updateResult.rowCount}`);
-      res.status(500).json({ error: 'Update failed' });
+    // ========== Уведомление бота об отмене ==========
+    if (status === 'Отменен' && process.env.BOT_URL) {
+      try {
+        const orderInfo = await pool.query('SELECT user_id, seller_id FROM orders WHERE id = $1', [orderId]);
+        if (orderInfo.rows.length > 0) {
+          const cancelData = {
+            orderId: orderId,
+            userId: orderInfo.rows[0].user_id,
+            sellerId: orderInfo.rows[0].seller_id
+          };
+          fetch(`${process.env.BOT_URL}/api/order-cancelled`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cancelData)
+          })
+          .then(response => response.json())
+          .then(data => console.log('✅ Уведомление об отмене отправлено в бота:', data))
+          .catch(err => console.error('❌ Ошибка отправки уведомления об отмене:', err));
+        }
+      } catch (err) {
+        console.error('❌ Ошибка при получении данных заказа для уведомления:', err);
+      }
     }
+    // =============================================
+
   } catch (err) {
-    console.error(`[CANCEL] Error:`, err);
+    console.error(err);
     res.status(500).json({ error: 'Database error' });
   }
 });
