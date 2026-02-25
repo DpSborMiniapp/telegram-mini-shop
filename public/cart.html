@@ -6,7 +6,6 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <title>Корзина</title>
     <style>
-        /* стили без изменений, как в предыдущей версии */
         body {
             font-family: Arial, sans-serif;
             padding: 10px;
@@ -28,8 +27,8 @@
         }
         .top-nav button {
             background: transparent;
-            color: #0088cc;
-            border: 1px solid #0088cc;
+            color: #28a745;
+            border: 1px solid #28a745;
             padding: 8px 15px;
             border-radius: 5px;
             cursor: pointer;
@@ -37,7 +36,7 @@
             width: 30%;
         }
         .top-nav button:hover {
-            background: #0088cc;
+            background: #28a745;
             color: white;
         }
         h1 { margin: 10px 0; }
@@ -59,7 +58,7 @@
             gap: 10px;
         }
         .item-controls button {
-            background: #0088cc;
+            background: #28a745;
             color: white;
             border: none;
             padding: 5px 12px;
@@ -84,7 +83,7 @@
             text-align: right;
         }
         .action-button {
-            background: #0088cc;
+            background: #28a745;
             color: white;
             border: none;
             padding: 12px;
@@ -98,9 +97,9 @@
             position: fixed;
             bottom: 20px;
             right: 20px;
-            background: #0088cc;
-            color: white;
-            border: none;
+            background: white;
+            color: #28a745;
+            border: 2px solid #28a745;
             border-radius: 50%;
             width: 60px;
             height: 60px;
@@ -146,11 +145,7 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        const userId = tg.initDataUnsafe?.user?.id;
-        if (!userId) {
-            alert('Ошибка: не удалось определить пользователя.');
-        }
-        console.log('Current userId:', userId);
+        const userId = tg.initDataUnsafe?.user?.id || 1;
 
         let products = [];
         let cart = { items: [] };
@@ -167,7 +162,6 @@
         }
 
         async function loadCart() {
-            if (!userId) return;
             const res = await fetch(`/api/cart/${userId}`);
             cart = await res.json();
             updateCartCount();
@@ -225,7 +219,7 @@
         }
 
         async function updateQuantity(productId, newQuantity) {
-            if (newQuantity < 0 || !userId) return;
+            if (newQuantity < 0) return;
 
             if (newQuantity === 0) {
                 await removeItem(productId);
@@ -247,7 +241,6 @@
         }
 
         async function removeItem(productId) {
-            if (!userId) return;
             const response = await fetch('/api/cart/remove', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
