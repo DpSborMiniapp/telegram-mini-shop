@@ -180,11 +180,13 @@
             orders.sort((a, b) => b.id - a.id);
 
             orders.forEach(order => {
-                // Приводим статусы к отображаемым названиям
+                // Приводим статус к отображаемому названию
                 let displayStatus = order.status;
-                if (displayStatus === 'новый') displayStatus = 'Активный';
+                if (displayStatus === 'active') displayStatus = 'Активный';
                 if (displayStatus === 'completed') displayStatus = 'Завершен';
+                if (displayStatus === 'новый') displayStatus = 'Активный'; // для старых заказов
 
+                // Определяем класс статуса
                 let statusClass = '';
                 if (displayStatus === 'Активный') statusClass = 'status-active';
                 else if (displayStatus === 'Завершен') statusClass = 'status-completed';
@@ -213,13 +215,13 @@
                         infoHtml += `<div><strong>Адрес доставки:</strong> ${contact.address}</div>`;
                     }
 
-                    // Если есть username, покажем его
                     if (contact.username) {
                         infoHtml += `<div><strong>Username:</strong> @${contact.username}</div>`;
                     }
                 }
 
-                const canCancel = order.status === 'Активный' || order.status === 'новый';
+                // Условие отмены: можно отменить, если статус "active" или "новый" (старый формат)
+                const canCancel = order.status === 'active' || order.status === 'новый';
                 const cancelButton = canCancel
                     ? `<button class="cancel-button" onclick="cancelOrder(${order.id})">Отменить заказ</button>`
                     : '';
