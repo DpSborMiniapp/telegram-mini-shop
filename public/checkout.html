@@ -165,6 +165,10 @@
 
         const userId = tg.initDataUnsafe?.user?.id || 1;
 
+        // Уникальный идентификатор для этого заказа (защита от дубликатов)
+        const requestId = crypto.randomUUID();
+        console.log('Request ID:', requestId);
+
         let cart = null;
         let products = [];
         let pickupLocations = [];
@@ -304,17 +308,20 @@
                 const response = await fetch('/api/order', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId, contact })
+                    body: JSON.stringify({ 
+                        userId, 
+                        contact,
+                        requestId // передаём уникальный идентификатор
+                    })
                 });
 
                 if (response.ok) {
-                    const result = await response.json();
                     window.location.href = 'orders.html';
                 } else {
                     const error = await response.json();
                     console.error('Ошибка при оформлении заказа:', error);
                     if (error.error === 'Duplicate order') {
-                        alert('Заказ уже был оформлен. Пожалуйста, подождите.');
+                        alert('Заказ уже был оформлен. Проверьте список заказов.');
                     } else {
                         alert('Ошибка при оформлении заказа. Попробуйте ещё раз.');
                     }
