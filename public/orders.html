@@ -155,6 +155,13 @@
 
         const userId = tg.initDataUnsafe?.user?.id || 1;
 
+        // Функция для блокировки всех кнопок отмены
+        function setCancelButtonsDisabled(disabled) {
+            document.querySelectorAll('.cancel-button').forEach(btn => {
+                btn.disabled = disabled;
+            });
+        }
+
         async function loadOrders() {
             const response = await fetch(`/api/orders/${userId}`);
             const orders = await response.json();
@@ -180,16 +187,12 @@
             orders.sort((a, b) => b.id - a.id);
 
             orders.forEach(order => {
-                // Исходный статус из базы (оставляем как есть)
                 const rawStatus = order.status;
-
-                // Определяем отображаемый статус
                 let displayStatus = rawStatus;
                 if (displayStatus === 'active' || displayStatus === 'новый' || displayStatus === 'Активный') displayStatus = 'Активный';
                 if (displayStatus === 'completed') displayStatus = 'Завершен';
                 if (displayStatus === 'cancelled' || displayStatus === 'Отменен') displayStatus = 'Отменен';
 
-                // Определяем класс статуса
                 let statusClass = '';
                 if (displayStatus === 'Активный') statusClass = 'status-active';
                 else if (displayStatus === 'Завершен') statusClass = 'status-completed';
@@ -223,7 +226,6 @@
                     }
                 }
 
-                // Проверяем, можно ли отменить заказ (приводим к нижнему регистру и убираем пробелы для надёжности)
                 const normalizedStatus = rawStatus.trim().toLowerCase();
                 const canCancel = normalizedStatus === 'активный' || normalizedStatus === 'новый' || normalizedStatus === 'active';
                 const cancelButton = canCancel
@@ -262,16 +264,27 @@
         async function cancelOrder(orderId) {
             if (!confirm('Вы уверены, что хотите отменить заказ?')) return;
 
-            const response = await fetch(`/api/order/${orderId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: 'Отменен' })
-            });
+            // Блокируем все кнопки отмены, чтобы предотвратить повторные клики
+            setCancelButtonsDisabled(true);
 
-            if (response.ok) {
-                loadOrders();
-            } else {
+            try {
+                const response = await fetch(`/api/order/${orderId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'Отменен' })
+                });
+
+                if (response.ok) {
+                    await loadOrders(); // перезагружаем список
+                } else {
+                    const errorData = await response.json();
+                    alert('Ошибка при отмене заказа: ' + (errorData.error || 'Неизвестная ошибка'));
+                }
+            } catch (err) {
+                console.error(err);
                 alert('Ошибка при отмене заказа');
+            } finally {
+                setCancelButtonsDisabled(false); // разблокируем кнопки
             }
         }
 
