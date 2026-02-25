@@ -276,7 +276,7 @@ app.post('/api/order', async (req, res) => {
         paymentMethod: contact.paymentMethod,
         deliveryType: contact.deliveryType,
         contact: contact,
-        requestId: requestId   // <-- передаём requestId
+        requestId: requestId
       };
       fetch(`${process.env.BOT_URL}/api/new-order`, {
         method: 'POST',
