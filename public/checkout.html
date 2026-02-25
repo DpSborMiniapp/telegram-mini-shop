@@ -165,7 +165,7 @@
 
         const userId = tg.initDataUnsafe?.user?.id || 1;
 
-        // Уникальный идентификатор для этого заказа (защита от дубликатов)
+        // ✅ Уникальный идентификатор для этого заказа (защита от дубликатов)
         const requestId = crypto.randomUUID();
         console.log('Request ID:', requestId);
 
@@ -271,7 +271,9 @@
 
         const confirmBtn = document.getElementById('confirm-button');
         confirmBtn.addEventListener('click', async (e) => {
-            e.target.disabled = true; // блокируем кнопку от повторного нажатия
+            // Блокируем кнопку, чтобы предотвратить повторные клики
+            e.target.disabled = true;
+
             try {
                 const paymentMethod = document.querySelector('input[name="payment"]:checked').value;
                 const deliveryType = document.querySelector('input[name="delivery"]:checked').value;
@@ -311,25 +313,30 @@
                     body: JSON.stringify({ 
                         userId, 
                         contact,
-                        requestId // передаём уникальный идентификатор
+                        requestId  // ✅ передаём уникальный идентификатор
                     })
                 });
 
                 if (response.ok) {
+                    // Успешно – переходим на страницу заказов
                     window.location.href = 'orders.html';
                 } else {
                     const error = await response.json();
                     console.error('Ошибка при оформлении заказа:', error);
+
                     if (error.error === 'Duplicate order') {
                         alert('Заказ уже был оформлен. Проверьте список заказов.');
+                        // Можно сразу перейти в заказы, чтобы увидеть дубликат
+                        window.location.href = 'orders.html';
                     } else {
                         alert('Ошибка при оформлении заказа. Попробуйте ещё раз.');
+                        // Разблокируем кнопку, чтобы можно было повторить
+                        e.target.disabled = false;
                     }
-                    e.target.disabled = false;
                 }
             } catch (err) {
-                console.error(err);
-                alert('Произошла ошибка');
+                console.error('Непредвиденная ошибка:', err);
+                alert('Произошла ошибка. Попробуйте позже.');
                 e.target.disabled = false;
             }
         });
@@ -338,3 +345,4 @@
     </script>
 </body>
 </html>
+
