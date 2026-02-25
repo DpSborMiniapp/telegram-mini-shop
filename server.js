@@ -208,14 +208,12 @@ app.post('/api/order', async (req, res) => {
   const numUserId = parseInt(userId, 10);
   const address = contact.address;
 
-  // Проверка наличия requestId
   if (!requestId || requestId.trim() === '') {
     console.log('❌ Запрос без requestId отклонён');
     return res.status(400).json({ error: 'Missing requestId' });
   }
 
   try {
-    // Проверка на уникальность requestId
     const existing = await pool.query('SELECT id FROM orders WHERE request_id = $1', [requestId]);
     if (existing.rows.length > 0) {
       console.log(`⚠️ Дублирующийся запрос с requestId ${requestId} отклонён`);
@@ -267,6 +265,7 @@ app.post('/api/order', async (req, res) => {
 
     console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact, seller_id, address_id, requestId });
 
+    // Отправка заказа в бота с requestId
     if (process.env.BOT_URL) {
       const botOrderData = {
         userId: numUserId,
@@ -276,7 +275,8 @@ app.post('/api/order', async (req, res) => {
         address: address,
         paymentMethod: contact.paymentMethod,
         deliveryType: contact.deliveryType,
-        contact: contact
+        contact: contact,
+        requestId: requestId   // <-- передаём requestId
       };
       fetch(`${process.env.BOT_URL}/api/new-order`, {
         method: 'POST',
