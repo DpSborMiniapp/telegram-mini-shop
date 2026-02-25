@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <title>Магазин - Каталог</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 10px;
+            background: #f5f5f5;
+            margin: 0;
+            padding-bottom: 80px;
+        }
+        .top-nav {
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            display: flex;
+            justify-content: space-around;
+            background: #fff;
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .top-nav button {
+            background: transparent;
+            color: #0088cc;
+            border: 1px solid #0088cc;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            width: 30%;
+        }
+        .top-nav button:hover {
+            background: #0088cc;
+            color: white;
+        }
+        h1 { margin: 10px 0; }
+        .product {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+        .product-image {
+            width: 100%;
+            max-width: 250px;
+            height: auto;
+            object-fit: cover;
+            border-radius: 8px;
+            background: #f0f0f0;
+            margin-bottom: 15px;
+        }
+        .product-info {
+            width: 100%;
+        }
+        .product-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 12px;
+        }
+        button {
+            background: #0088cc;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        .quantity {
+            margin: 0 10px;
+            font-weight: bold;
+        }
+        .in-cart-text {
+            margin-left: 10px;
+            color: #0088cc;
+            font-size: 0.9em;
+        }
+        .cart-fab {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #0088cc;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            font-size: 28px;
+            z-index: 1000;
+        }
+        .cart-fab .cart-count {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: red;
+            color: white;
+            border-radius: 50%;
+            padding: 2px 6px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="top-nav">
+        <button onclick="location.href='index.html'">Каталог</button>
+        <button onclick="location.href='cart.html'">Корзина</button>
+        <button onclick="location.href='orders.html'">Мои заказы</button>
+    </div>
+
+    <h1>Каталог</h1>
+    <div id="products"></div>
+
+    <div class="cart-fab" onclick="location.href='cart.html'">
+        🛒
+        <span class="cart-count" id="cart-count">0</span>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        const userId = 1;
+
+        let products = [];
+        let cart = { items: [] };
+
+        async function loadData() {
+            await loadProducts();
+            await loadCart();
+            renderProducts();
+            updateCartCount();
+        }
+
+        async function loadProducts() {
+            const res = await fetch('/api/products');
+            products = await res.json();
+        }
+
+        async function loadCart() {
+            const res = await fetch(`/api/cart/${userId}`);
+            cart = await res.json();
+        }
+
+        function updateCartCount() {
+            const totalItems = cart.items.reduce((sum, item) => sum + item.quantity, 0);
+            document.getElementById('cart-count').textContent = totalItems;
+        }
+
+        function renderProducts() {
+            const container = document.getElementById('products');
+            container.innerHTML = '';
+
+            products.forEach(product => {
+                const cartItem = cart.items.find(item => item.productId === product.id);
+                const inCart = !!cartItem;
+
+                const div = document.createElement('div');
+                div.className = 'product';
+                div.setAttribute('data-product-id', product.id);
+
+                // Если есть своё фото — используем его, иначе picsum
+                const imageUrl = product.image || 'https://picsum.photos/300/300?random=' + product.id;
+
+                let controlsHtml = '';
+                if (inCart) {
+                    controlsHtml = `
+                        <div class="product-controls">
+                            <button onclick="decrementQuantity(${product.id})">-</button>
+                            <span class="quantity" id="qty-${product.id}">${cartItem.quantity}</span>
+                            <button onclick="incrementQuantity(${product.id})">+</button>
+                            <span class="in-cart-text">В корзине</span>
+                        </div>
+                    `;
+                } else {
+                    controlsHtml = `
+                        <div class="product-controls">
+                            <button onclick="addToCart(${product.id})">В корзину</button>
+                        </div>
+                    `;
+                }
+
+                div.innerHTML = `
+                    <img src="${imageUrl}" class="product-image" alt="${product.name}">
+                    <div class="product-info">
+                        <h3>${product.name}</h3>
+                        <p>${product.description}</p>
+                        <p><strong>${product.price} руб.</strong></p>
+                        ${controlsHtml}
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function addToCart(productId) {
+            await fetch('/api/cart/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, productId, quantity: 1 })
+            });
+            await loadCart();
+            renderProducts();
+            updateCartCount();
+        }
+
+        async function incrementQuantity(productId) {
+            const cartItem = cart.items.find(item => item.productId === productId);
+            if (!cartItem) return;
+            await updateQuantity(productId, cartItem.quantity + 1);
+        }
+
+        async function decrementQuantity(productId) {
+            const cartItem = cart.items.find(item => item.productId === productId);
+            if (!cartItem) return;
+            const newQuantity = cartItem.quantity - 1;
+            if (newQuantity === 0) {
+                await removeItem(productId);
+            } else {
+                await updateQuantity(productId, newQuantity);
+            }
+        }
+
+        async function updateQuantity(productId, newQuantity) {
+            await fetch('/api/cart/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, productId, quantity: newQuantity })
+            });
+            await loadCart();
+            renderProducts();
+            updateCartCount();
+        }
+
+        async function removeItem(productId) {
+            await fetch('/api/cart/remove', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, productId })
+            });
+            await loadCart();
+            renderProducts();
+            updateCartCount();
+        }
+
+        loadData();
+    </script>
+</body>
+</html>

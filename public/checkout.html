@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <title>Оформление заказа</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 10px;
+            background: #f5f5f5;
+            margin: 0;
+            padding-bottom: 80px;
+        }
+        .top-nav {
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            display: flex;
+            justify-content: space-around;
+            background: #fff;
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .top-nav button {
+            background: transparent;
+            color: #0088cc;
+            border: 1px solid #0088cc;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            width: 30%;
+        }
+        .top-nav button:hover {
+            background: #0088cc;
+            color: white;
+        }
+        h1 { margin: 10px 0; }
+        .order-summary { background: white; border-radius: 8px; padding: 10px; margin-bottom: 20px; }
+        .order-item { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #eee; }
+        .order-total { font-weight: bold; margin-top: 10px; text-align: right; }
+        .section { background: white; border-radius: 8px; padding: 10px; margin-bottom: 20px; }
+        .section-title { font-weight: bold; margin-bottom: 10px; }
+        .radio-group-vertical {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .radio-group-vertical label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .address-option { margin-left: 20px; padding: 5px; }
+        .address-input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 5px; margin-top: 5px; }
+        .delivery-block { margin-top: 10px; padding: 10px; background: #f9f9f9; border-radius: 5px; display: none; }
+        button { background: #0088cc; color: white; border: none; padding: 12px; border-radius: 5px; cursor: pointer; width: 100%; font-size: 16px; }
+        .notice { font-size: 0.9em; color: #666; margin: 5px 0; }
+        .cart-fab {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #0088cc;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            font-size: 28px;
+            z-index: 1000;
+        }
+        .cart-fab .cart-count {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: red;
+            color: white;
+            border-radius: 50%;
+            padding: 2px 6px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="top-nav">
+        <button onclick="location.href='index.html'">Каталог</button>
+        <button onclick="location.href='cart.html'">Корзина</button>
+        <button onclick="location.href='orders.html'">Мои заказы</button>
+    </div>
+
+    <h1>Оформление заказа</h1>
+
+    <div class="order-summary" id="order-summary">
+        <h2>Заказ</h2>
+        <div id="items-list"></div>
+        <div class="order-total" id="total-amount"></div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Способ оплаты</div>
+        <div class="radio-group-vertical">
+            <label><input type="radio" name="payment" value="cash" checked> Наличные (приоритет)</label>
+            <label><input type="radio" name="payment" value="transfer"> Перевод по номеру</label>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Способ получения</div>
+        <div class="radio-group-vertical">
+            <label><input type="radio" name="delivery" value="pickup" checked> Самовывоз</label>
+            <label><input type="radio" name="delivery" value="free"> Бесплатная доставка от 15 000 руб</label>
+            <label><input type="radio" name="delivery" value="courier"> Доставка курьером</label>
+        </div>
+
+        <!-- Блок самовывоза теперь пустой – заполняется динамически -->
+        <div id="pickup-block" class="delivery-block" style="display: block;"></div>
+
+        <!-- Блок бесплатной доставки -->
+        <div id="free-delivery-block" class="delivery-block">
+            <div>Укажите адрес</div>
+            <input type="text" id="free-address" class="address-input" placeholder="Адрес доставки">
+        </div>
+
+        <!-- Блок доставки курьером -->
+        <div id="courier-block" class="delivery-block">
+            <div class="notice">Доставка сервисом Яндекс за счет покупателя</div>
+            <div>Укажите адрес</div>
+            <input type="text" id="courier-address" class="address-input" placeholder="Адрес доставки">
+        </div>
+    </div>
+
+    <button id="confirm-button">Подтвердить заказ</button>
+
+    <div class="cart-fab" onclick="location.href='cart.html'">
+        🛒
+        <span class="cart-count" id="cart-count">0</span>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        const userId = 1; // замените на tg.initDataUnsafe?.user?.id в продакшене
+
+        let cart = null;
+        let products = [];
+        let pickupLocations = []; // точки самовывоза из базы
+
+        async function loadData() {
+            await loadProducts();
+            await loadCart();
+            await loadPickupLocations(); // загружаем адреса
+            renderOrderSummary();
+            updateCartCount();
+            renderPickupLocations(); // отрисовываем радиокнопки
+        }
+
+        async function loadProducts() {
+            const res = await fetch('/api/products');
+            products = await res.json();
+        }
+
+        async function loadCart() {
+            const res = await fetch(`/api/cart/${userId}`);
+            cart = await res.json();
+        }
+
+        async function loadPickupLocations() {
+            const res = await fetch('/api/pickup-locations');
+            pickupLocations = await res.json();
+        }
+
+        function renderOrderSummary() {
+            if (!cart || !cart.items || cart.items.length === 0) {
+                window.location.href = 'index.html';
+                return;
+            }
+
+            const itemsList = document.getElementById('items-list');
+            itemsList.innerHTML = '';
+
+            let total = 0;
+            cart.items.forEach(item => {
+                const product = products.find(p => p.id === item.productId);
+                if (!product) return;
+                const price = item.priceAtTime || product.price;
+                const itemTotal = price * item.quantity;
+                total += itemTotal;
+
+                const div = document.createElement('div');
+                div.className = 'order-item';
+                div.innerHTML = `
+                    <span>${product.name} × ${item.quantity}</span>
+                    <span>${itemTotal} руб.</span>
+                `;
+                itemsList.appendChild(div);
+            });
+
+            document.getElementById('total-amount').innerText = `Сумма заказа: ${total} руб.`;
+        }
+
+        function updateCartCount() {
+            const totalItems = cart?.items.reduce((sum, item) => sum + item.quantity, 0) || 0;
+            document.getElementById('cart-count').textContent = totalItems;
+        }
+
+        // Отрисовка точек самовывоза по данным из базы
+        function renderPickupLocations() {
+            const container = document.getElementById('pickup-block');
+            if (!container) return;
+
+            // Группируем по районам (district)
+            const districts = {};
+            pickupLocations.forEach(loc => {
+                if (!districts[loc.district]) districts[loc.district] = [];
+                districts[loc.district].push(loc);
+            });
+
+            let html = '';
+            for (const [district, locations] of Object.entries(districts)) {
+                html += `<div class="address-option"><strong>${district}</strong><br>`;
+                locations.forEach(loc => {
+                    html += `<label><input type="radio" name="pickup-address" value="${loc.address}"> ${loc.address}</label><br>`;
+                });
+                html += `</div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        // Переключение блоков доставки
+        const deliveryRadios = document.querySelectorAll('input[name="delivery"]');
+        const pickupBlock = document.getElementById('pickup-block');
+        const freeBlock = document.getElementById('free-delivery-block');
+        const courierBlock = document.getElementById('courier-block');
+
+        function updateDeliveryBlocks() {
+            const selected = document.querySelector('input[name="delivery"]:checked').value;
+            pickupBlock.style.display = 'none';
+            freeBlock.style.display = 'none';
+            courierBlock.style.display = 'none';
+            if (selected === 'pickup') pickupBlock.style.display = 'block';
+            else if (selected === 'free') freeBlock.style.display = 'block';
+            else if (selected === 'courier') courierBlock.style.display = 'block';
+        }
+
+        deliveryRadios.forEach(radio => {
+            radio.addEventListener('change', updateDeliveryBlocks);
+        });
+        updateDeliveryBlocks();
+
+        // Обработка подтверждения заказа
+        document.getElementById('confirm-button').addEventListener('click', async () => {
+            const paymentMethod = document.querySelector('input[name="payment"]:checked').value;
+            const deliveryType = document.querySelector('input[name="delivery"]:checked').value;
+
+            let address = '';
+            if (deliveryType === 'pickup') {
+                const pickupAddress = document.querySelector('input[name="pickup-address"]:checked');
+                if (!pickupAddress) {
+                    alert('Выберите адрес самовывоза');
+                    return;
+                }
+                address = pickupAddress.value;
+            } else if (deliveryType === 'free') {
+                address = document.getElementById('free-address').value.trim();
+                if (!address) {
+                    alert('Введите адрес доставки');
+                    return;
+                }
+            } else if (deliveryType === 'courier') {
+                address = document.getElementById('courier-address').value.trim();
+                if (!address) {
+                    alert('Введите адрес доставки');
+                    return;
+                }
+            }
+
+            const contact = {
+                name: 'Покупатель',
+                phone: '0000000000',
+                address: address,
+                paymentMethod: paymentMethod,
+                deliveryType: deliveryType
+            };
+
+            const response = await fetch('/api/order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, contact })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                window.location.href = 'orders.html';
+            } else {
+                console.error('Ошибка при оформлении заказа');
+            }
+        });
+
+        loadData();
+    </script>
+</body>
+</html>
