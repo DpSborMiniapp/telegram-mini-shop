@@ -141,16 +141,16 @@ app.put('/api/order/:orderId', async (req, res) => {
   }
 
   try {
-    const order = await pool.query('SELECT status FROM orders WHERE id = $1', [orderId]);
+    const order = await pool.query('SELECT status, seller_id FROM orders WHERE id = $1', [orderId]);
     if (order.rows.length === 0) {
       console.log(`[CANCEL] Order ${orderId} not found`);
       return res.status(404).json({ error: 'Order not found' });
     }
 
     const currentStatus = order.rows[0].status;
-    console.log(`[CANCEL] Current status: ${currentStatus}`);
+    const seller_id = order.rows[0].seller_id;
+    console.log(`[CANCEL] Current status: ${currentStatus}, seller_id: ${seller_id}`);
 
-    // Проверяем, является ли заказ активным (может быть "Активный" или "active")
     const isActive = currentStatus === 'Активный' || currentStatus === 'active' || currentStatus === 'новый';
     if (!isActive && status !== currentStatus) {
       console.log(`[CANCEL] Cannot change non-active order ${orderId} from ${currentStatus} to ${status}`);
@@ -159,32 +159,30 @@ app.put('/api/order/:orderId', async (req, res) => {
 
     await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
     console.log(`[CANCEL] Order ${orderId} updated to ${status}`);
-    res.json({ success: true });
 
-    // ========== Уведомление бота об отмене ==========
-    if (status === 'Отменен' && process.env.BOT_URL) {
-      try {
-        const orderInfo = await pool.query('SELECT user_id, seller_id FROM orders WHERE id = $1', [orderId]);
-        if (orderInfo.rows.length > 0) {
-          const cancelData = {
-            orderId: orderId,
-            userId: orderInfo.rows[0].user_id,
-            sellerId: orderInfo.rows[0].seller_id
-          };
-          fetch(`${process.env.BOT_URL}/api/order-cancelled`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(cancelData)
-          })
-          .then(response => response.json())
-          .then(data => console.log('✅ Уведомление об отмене отправлено в бота:', data))
-          .catch(err => console.error('❌ Ошибка отправки уведомления об отмене:', err));
-        }
-      } catch (err) {
-        console.error('❌ Ошибка при получении данных заказа для уведомления:', err);
+    // Уведомление бота об отмене
+    if (status === 'Отменен' && process.env.BOT_URL && seller_id) {
+      const cancelData = {
+        orderId: orderId,
+        userId: userId, // или можно получить из запроса, но у нас есть userId из order? лучше добавить в SELECT user_id
+        sellerId: seller_id
+      };
+      // Получим user_id из заказа (нужен в SELECT)
+      const userResult = await pool.query('SELECT user_id FROM orders WHERE id = $1', [orderId]);
+      if (userResult.rows.length > 0) {
+        cancelData.userId = userResult.rows[0].user_id;
       }
+      fetch(`${process.env.BOT_URL}/api/order-cancelled`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cancelData)
+      })
+      .then(response => response.json())
+      .then(data => console.log('✅ Уведомление об отмене отправлено в бота:', data))
+      .catch(err => console.error('❌ Ошибка отправки уведомления об отмене:', err));
     }
-    // =============================================
+
+    res.json({ success: true });
 
   } catch (err) {
     console.error(err);
@@ -207,8 +205,17 @@ app.get('/api/pickup-locations', async (req, res) => {
 app.post('/api/order', async (req, res) => {
   const { userId, contact } = req.body;
   const numUserId = parseInt(userId, 10);
+  const address = contact.address;
 
   try {
+    // Получаем seller_id и address_id по адресу
+    const addrResult = await pool.query('SELECT id, seller_id FROM pickup_locations WHERE address = $1', [address]);
+    if (addrResult.rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid pickup address' });
+    }
+    const address_id = addrResult.rows[0].id;
+    const seller_id = addrResult.rows[0].seller_id;
+
     const cartResult = await pool.query(`
       SELECT c.product_id, c.quantity, c.price_at_time, p.name
       FROM carts c
@@ -233,30 +240,28 @@ app.post('/api/order', async (req, res) => {
     });
 
     const insertResult = await pool.query(`
-      INSERT INTO orders (user_id, items, total, contact, status)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO orders (user_id, seller_id, address_id, items, total, contact, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING id
-    `, [numUserId, JSON.stringify(orderItems), total, JSON.stringify(contact), 'Активный']);
+    `, [numUserId, seller_id, address_id, JSON.stringify(orderItems), total, JSON.stringify(contact), 'Активный']);
 
     const orderId = insertResult.rows[0].id;
 
     await pool.query('DELETE FROM carts WHERE user_id = $1', [numUserId]);
 
-    console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact });
+    console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact, seller_id, address_id });
 
-    // Отправка заказа в бота
     if (process.env.BOT_URL) {
       const botOrderData = {
         userId: numUserId,
         name: contact.name,
         items: orderItems,
         total: total,
-        address: contact.address,
+        address: address,
         paymentMethod: contact.paymentMethod,
         deliveryType: contact.deliveryType,
         contact: contact
       };
-
       fetch(`${process.env.BOT_URL}/api/new-order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
