@@ -6,6 +6,7 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <title>Корзина</title>
     <style>
+        /* стили без изменений, как в предыдущей версии */
         body {
             font-family: Arial, sans-serif;
             padding: 10px;
@@ -145,7 +146,11 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        const userId = 1;
+        const userId = tg.initDataUnsafe?.user?.id;
+        if (!userId) {
+            alert('Ошибка: не удалось определить пользователя.');
+        }
+        console.log('Current userId:', userId);
 
         let products = [];
         let cart = { items: [] };
@@ -162,6 +167,7 @@
         }
 
         async function loadCart() {
+            if (!userId) return;
             const res = await fetch(`/api/cart/${userId}`);
             cart = await res.json();
             updateCartCount();
@@ -219,7 +225,7 @@
         }
 
         async function updateQuantity(productId, newQuantity) {
-            if (newQuantity < 0) return;
+            if (newQuantity < 0 || !userId) return;
 
             if (newQuantity === 0) {
                 await removeItem(productId);
@@ -241,6 +247,7 @@
         }
 
         async function removeItem(productId) {
+            if (!userId) return;
             const response = await fetch('/api/cart/remove', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
