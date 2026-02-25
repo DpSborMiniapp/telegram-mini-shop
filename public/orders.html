@@ -154,6 +154,7 @@
         tg.expand();
 
         const userId = tg.initDataUnsafe?.user?.id || 1;
+        let isCancelling = false; // флаг для предотвращения повторных отмен
 
         // Функция для блокировки всех кнопок отмены
         function setCancelButtonsDisabled(disabled) {
@@ -163,8 +164,10 @@
         }
 
         async function loadOrders() {
+            console.log('Загрузка заказов для userId:', userId);
             const response = await fetch(`/api/orders/${userId}`);
             const orders = await response.json();
+            console.log('Получены заказы:', orders);
             renderOrders(orders);
         }
 
@@ -262,10 +265,15 @@
         }
 
         async function cancelOrder(orderId) {
+            if (isCancelling) {
+                console.log('Отмена уже выполняется, повторный клик игнорируется');
+                return;
+            }
             if (!confirm('Вы уверены, что хотите отменить заказ?')) return;
 
-            // Блокируем все кнопки отмены, чтобы предотвратить повторные клики
+            isCancelling = true;
             setCancelButtonsDisabled(true);
+            console.log(`Отмена заказа ${orderId} начата`);
 
             try {
                 const response = await fetch(`/api/order/${orderId}`, {
@@ -274,17 +282,22 @@
                     body: JSON.stringify({ status: 'Отменен' })
                 });
 
+                console.log(`Ответ от сервера: статус ${response.status}`);
                 if (response.ok) {
+                    console.log(`Заказ ${orderId} успешно отменён`);
                     await loadOrders(); // перезагружаем список
                 } else {
                     const errorData = await response.json();
+                    console.error('Ошибка отмены:', errorData);
                     alert('Ошибка при отмене заказа: ' + (errorData.error || 'Неизвестная ошибка'));
                 }
             } catch (err) {
-                console.error(err);
+                console.error('Исключение при отмене:', err);
                 alert('Ошибка при отмене заказа');
             } finally {
-                setCancelButtonsDisabled(false); // разблокируем кнопки
+                isCancelling = false;
+                setCancelButtonsDisabled(false);
+                console.log('Отмена завершена');
             }
         }
 
