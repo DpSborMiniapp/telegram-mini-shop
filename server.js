@@ -163,7 +163,6 @@ app.put('/api/order/:orderId', async (req, res) => {
 // Получить все точки самовывоза (для страницы оформления заказа)
 app.get('/api/pickup-locations', async (req, res) => {
   try {
-    // В таблице pickup_locations поля: district, address, sort_order
     const result = await pool.query(
       'SELECT district, address, sort_order FROM pickup_locations ORDER BY district, sort_order'
     );
@@ -219,15 +218,15 @@ app.post('/api/order', async (req, res) => {
     if (process.env.BOT_URL) {
       const botOrderData = {
         userId: numUserId,
-        name: contact.name || 'Покупатель',
+        name: contact.name,
         items: orderItems,
         total: total,
         address: contact.address,
         paymentMethod: contact.paymentMethod,
-        deliveryType: contact.deliveryType
+        deliveryType: contact.deliveryType,
+        contact: contact // передаём весь объект contact
       };
 
-      // Отправляем асинхронно, не ждём ответа
       fetch(`${process.env.BOT_URL}/api/new-order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
