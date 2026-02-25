@@ -87,7 +87,7 @@ app.post('/api/cart/add', async (req, res) => {
   }
 });
 
-// Обновить количество товара в корзине (задать конкретное значение)
+// Обновить количество товара в корзине
 app.post('/api/cart/update', async (req, res) => {
   const { userId, productId, quantity } = req.body;
   const numUserId = parseInt(userId, 10);
@@ -136,7 +136,7 @@ app.get('/api/orders/:userId', async (req, res) => {
   }
 });
 
-// Обновить статус заказа (например, отмена)
+// Обновить статус заказа (отмена)
 app.put('/api/order/:orderId', async (req, res) => {
   const orderId = parseInt(req.params.orderId, 10);
   const { status } = req.body;
@@ -161,66 +161,13 @@ app.put('/api/order/:orderId', async (req, res) => {
   }
 });
 
-// --- НОВЫЙ МАРШРУТ: Получить все точки самовывоза ---
-app.get('/api/pickup-locations', async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT * FROM pickup_locations ORDER BY district, sort_order'
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-// Функция отправки уведомления в Telegram
-async function sendTelegramNotification(order) {
-  const botToken = process.env.BOT_TOKEN;
-  const chatId = process.env.CHANNEL_ID;
-  if (!botToken || !chatId) {
-    console.error('Telegram credentials missing');
-    return;
-  }
-
-  let message = `<b>🆕 Новый заказ #${order.id}</b>\n\n`;
-  message += `<b>👤 Клиент:</b> ${order.contact.name}\n`;
-  message += `<b>📞 Телефон:</b> ${order.contact.phone}\n`;
-  message += `<b>📍 Адрес:</b> ${order.contact.address}\n`;
-  message += `<b>💰 Сумма:</b> ${order.total} руб.\n`;
-
-  let deliveryText = '';
-  if (order.contact.deliveryType === 'pickup') deliveryText = 'Самовывоз';
-  else if (order.contact.deliveryType === 'free') deliveryText = 'Бесплатная доставка от 15 000 руб';
-  else if (order.contact.deliveryType === 'courier') deliveryText = 'Доставка курьером';
-  message += `<b>🚚 Доставка:</b> ${deliveryText}\n`;
-
-  let paymentText = order.contact.paymentMethod === 'cash' ? 'Наличные' : 'Перевод по номеру';
-  message += `<b>💳 Оплата:</b> ${paymentText}\n\n`;
-
-  message += `<b>📦 Товары:</b>\n`;
-  order.items.forEach(item => {
-    message += `   • ${item.name} x${item.quantity} = ${item.price * item.quantity} руб.\n`;
-  });
-
-  try {
-    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' })
-    });
-  } catch (err) {
-    console.error('Telegram send error:', err);
-  }
-}
-
-// Оформить заказ
+// Оформить заказ (с отправкой в бота)
 app.post('/api/order', async (req, res) => {
   const { userId, contact } = req.body;
   const numUserId = parseInt(userId, 10);
 
   try {
+    // Получаем корзину с ценами
     const cartResult = await pool.query(`
       SELECT c.product_id, c.quantity, c.price_at_time, p.name
       FROM carts c
@@ -244,6 +191,7 @@ app.post('/api/order', async (req, res) => {
       };
     });
 
+    // Сохраняем заказ в БД
     const insertResult = await pool.query(`
       INSERT INTO orders (user_id, items, total, contact, status)
       VALUES ($1, $2, $3, $4, $5)
@@ -252,19 +200,36 @@ app.post('/api/order', async (req, res) => {
 
     const orderId = insertResult.rows[0].id;
 
+    // Очищаем корзину
     await pool.query('DELETE FROM carts WHERE user_id = $1', [numUserId]);
 
-    // Отправляем уведомление (не ждём)
-    sendTelegramNotification({
-      id: orderId,
-      user_id: numUserId,
-      items: orderItems,
-      total,
-      contact,
-      status: 'Активный'
-    }).catch(e => console.error(e));
+    // ========== ОТПРАВКА В БОТА ==========
+    if (process.env.BOT_URL) {
+      const botOrderData = {
+        userId: numUserId,
+        name: contact.name || 'Покупатель',
+        items: orderItems,
+        total: total,
+        address: contact.address,
+        paymentMethod: contact.paymentMethod,
+        deliveryType: contact.deliveryType
+      };
 
+      // Отправляем асинхронно, не ждём ответа
+      fetch(`${process.env.BOT_URL}/api/new-order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(botOrderData)
+      })
+      .then(response => response.json())
+      .then(data => console.log('✅ Заказ отправлен в бота:', data))
+      .catch(err => console.error('❌ Ошибка отправки в бота:', err));
+    }
+    // =====================================
+
+    console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact });
     res.json({ orderId });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Database error' });
