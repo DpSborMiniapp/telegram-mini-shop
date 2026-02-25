@@ -182,6 +182,7 @@
             orders.forEach(order => {
                 let displayStatus = order.status;
                 if (displayStatus === 'новый') displayStatus = 'Активный';
+                if (displayStatus === 'completed') displayStatus = 'Завершен';
 
                 let statusClass = '';
                 if (displayStatus === 'Активный') statusClass = 'status-active';
@@ -268,3 +269,4 @@
     </script>
 </body>
 </html>
+
