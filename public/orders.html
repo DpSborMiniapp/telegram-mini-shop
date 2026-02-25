@@ -6,6 +6,7 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <title>Мои заказы</title>
     <style>
+        /* стили без изменений, как в предыдущей версии */
         body {
             font-family: Arial, sans-serif;
             padding: 10px;
@@ -153,15 +154,21 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        const userId = 1;
+        const userId = tg.initDataUnsafe?.user?.id;
+        if (!userId) {
+            alert('Ошибка: не удалось определить пользователя.');
+        }
+        console.log('Current userId:', userId);
 
         async function loadOrders() {
+            if (!userId) return;
             const response = await fetch(`/api/orders/${userId}`);
             const orders = await response.json();
             renderOrders(orders);
         }
 
         async function loadCartCount() {
+            if (!userId) return;
             const res = await fetch(`/api/cart/${userId}`);
             const cart = await res.json();
             const totalItems = cart.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -240,6 +247,7 @@
 
         async function cancelOrder(orderId) {
             if (!confirm('Вы уверены, что хотите отменить заказ?')) return;
+            if (!userId) return;
 
             const response = await fetch(`/api/order/${orderId}`, {
                 method: 'PUT',
