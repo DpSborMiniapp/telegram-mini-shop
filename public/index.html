@@ -27,8 +27,8 @@
         }
         .top-nav button {
             background: transparent;
-            color: #0088cc;
-            border: 1px solid #0088cc;
+            color: #28a745;
+            border: 1px solid #28a745;
             padding: 8px 15px;
             border-radius: 5px;
             cursor: pointer;
@@ -36,10 +36,25 @@
             width: 30%;
         }
         .top-nav button:hover {
-            background: #0088cc;
+            background: #28a745;
             color: white;
         }
         h1 { margin: 10px 0; }
+        .category-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .category-buttons button {
+            flex: 1;
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
         .product {
             background: white;
             border-radius: 8px;
@@ -68,32 +83,37 @@
             align-items: center;
             justify-content: center;
             margin-top: 12px;
+            width: 100%;
         }
-        button {
-            background: #0088cc;
+        .product-controls button {
+            background: #28a745;
             color: white;
             border: none;
             padding: 8px 15px;
             border-radius: 5px;
             cursor: pointer;
             margin-right: 5px;
+            flex: 1;
         }
-        .quantity {
+        .product-controls .quantity {
             margin: 0 10px;
             font-weight: bold;
+            min-width: 30px;
+            text-align: center;
         }
         .in-cart-text {
             margin-left: 10px;
-            color: #0088cc;
+            color: #28a745;
             font-size: 0.9em;
+            font-weight: bold;
         }
         .cart-fab {
             position: fixed;
             bottom: 20px;
             right: 20px;
-            background: #0088cc;
-            color: white;
-            border: none;
+            background: white;
+            color: #28a745;
+            border: 2px solid #28a745;
             border-radius: 50%;
             width: 60px;
             height: 60px;
@@ -116,6 +136,12 @@
             font-size: 14px;
             font-weight: bold;
         }
+        h2 {
+            margin: 20px 0 10px;
+            color: #333;
+            border-bottom: 2px solid #28a745;
+            padding-bottom: 5px;
+        }
     </style>
 </head>
 <body>
@@ -126,6 +152,12 @@
     </div>
 
     <h1>Каталог</h1>
+    
+    <div class="category-buttons">
+        <button onclick="document.getElementById('nuts').scrollIntoView({behavior: 'smooth'})">🌰 Орехи</button>
+        <button onclick="document.getElementById('driedfruits').scrollIntoView({behavior: 'smooth'})">🍏 Сухофрукты</button>
+    </div>
+
     <div id="products"></div>
 
     <div class="cart-fab" onclick="location.href='cart.html'">
@@ -137,7 +169,6 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        // Используем реальный ID, если есть, иначе заглушку 1
         const userId = tg.initDataUnsafe?.user?.id || 1;
         console.log('Current userId:', userId);
 
@@ -170,7 +201,36 @@
             const container = document.getElementById('products');
             container.innerHTML = '';
 
+            // Группируем товары по категориям
+            const categories = {};
             products.forEach(product => {
+                const cat = product.category || 'Другое';
+                if (!categories[cat]) categories[cat] = [];
+                categories[cat].push(product);
+            });
+
+            // Порядок категорий: Орехи, Сухофрукты, остальное
+            const order = ['Орехи', 'Сухофрукты'];
+            for (let cat of order) {
+                if (categories[cat]) {
+                    renderCategory(cat, categories[cat], container);
+                    delete categories[cat];
+                }
+            }
+            // Остальные категории
+            for (let cat in categories) {
+                renderCategory(cat, categories[cat], container);
+            }
+        }
+
+        function renderCategory(catName, productsList, container) {
+            const catId = catName === 'Орехи' ? 'nuts' : (catName === 'Сухофрукты' ? 'driedfruits' : catName);
+            const catDiv = document.createElement('div');
+            catDiv.id = catId;
+            catDiv.innerHTML = `<h2>${catName}</h2>`;
+            container.appendChild(catDiv);
+
+            productsList.forEach(product => {
                 const cartItem = cart.items.find(item => item.productId === product.id);
                 const inCart = !!cartItem;
 
@@ -178,7 +238,6 @@
                 div.className = 'product';
                 div.setAttribute('data-product-id', product.id);
 
-                // Если есть своё фото — используем его, иначе заглушка
                 const imageUrl = product.image || 'https://via.placeholder.com/250?text=Нет+фото';
 
                 let controlsHtml = '';
