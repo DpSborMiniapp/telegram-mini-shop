@@ -163,7 +163,7 @@ app.put('/api/order/:orderId', async (req, res) => {
 // Получить все точки самовывоза (для страницы оформления заказа)
 app.get('/api/pickup-locations', async (req, res) => {
   try {
-    // Используем правильные имена колонок: district, address, sort_order
+    // В таблице pickup_locations поля: district, address, sort_order
     const result = await pool.query(
       'SELECT district, address, sort_order FROM pickup_locations ORDER BY district, sort_order'
     );
@@ -214,6 +214,31 @@ app.post('/api/order', async (req, res) => {
     await pool.query('DELETE FROM carts WHERE user_id = $1', [numUserId]);
 
     console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact });
+
+    // ========== ОТПРАВКА ЗАКАЗА В БОТА ==========
+    if (process.env.BOT_URL) {
+      const botOrderData = {
+        userId: numUserId,
+        name: contact.name || 'Покупатель',
+        items: orderItems,
+        total: total,
+        address: contact.address,
+        paymentMethod: contact.paymentMethod,
+        deliveryType: contact.deliveryType
+      };
+
+      // Отправляем асинхронно, не ждём ответа
+      fetch(`${process.env.BOT_URL}/api/new-order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(botOrderData)
+      })
+      .then(response => response.json())
+      .then(data => console.log('✅ Заказ отправлен в бота:', data))
+      .catch(err => console.error('❌ Ошибка отправки в бота:', err));
+    }
+    // =============================================
+
     res.json({ orderId });
 
   } catch (err) {
