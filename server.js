@@ -11,8 +11,12 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+// Логирование всех запросов с телом
 app.use((req, res, next) => {
-  console.log(`${req.method} ${req.url}`);
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  if (req.method === 'POST' || req.method === 'PUT') {
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+  }
   next();
 });
 
@@ -158,11 +162,17 @@ app.put('/api/order/:orderId', async (req, res) => {
       return res.status(400).json({ error: 'Cannot change non-active order' });
     }
 
-    // Обновляем статус
-    await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
-    console.log(`[CANCEL] Order ${orderId} updated to ${status}`);
+    // Обновляем статус и получаем количество затронутых строк
+    const updateResult = await pool.query('UPDATE orders SET status = $1 WHERE id = $2 RETURNING id', [status, orderId]);
+    console.log(`[CANCEL] Updated rows: ${updateResult.rowCount}`);
 
-    res.json({ success: true });
+    if (updateResult.rowCount === 1) {
+      console.log(`[CANCEL] Order ${orderId} updated to ${status}`);
+      res.json({ success: true });
+    } else {
+      console.error(`[CANCEL] Unexpected row count: ${updateResult.rowCount}`);
+      res.status(500).json({ error: 'Update failed' });
+    }
   } catch (err) {
     console.error(`[CANCEL] Error:`, err);
     res.status(500).json({ error: 'Database error' });
