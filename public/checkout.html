@@ -6,7 +6,6 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <title>Оформление заказа</title>
     <style>
-        /* стили без изменений, как в предыдущей версии */
         body {
             font-family: Arial, sans-serif;
             padding: 10px;
@@ -28,8 +27,8 @@
         }
         .top-nav button {
             background: transparent;
-            color: #0088cc;
-            border: 1px solid #0088cc;
+            color: #28a745;
+            border: 1px solid #28a745;
             padding: 8px 15px;
             border-radius: 5px;
             cursor: pointer;
@@ -37,7 +36,7 @@
             width: 30%;
         }
         .top-nav button:hover {
-            background: #0088cc;
+            background: #28a745;
             color: white;
         }
         h1 { margin: 10px 0; }
@@ -59,15 +58,30 @@
         .address-option { margin-left: 20px; padding: 5px; }
         .address-input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 5px; margin-top: 5px; }
         .delivery-block { margin-top: 10px; padding: 10px; background: #f9f9f9; border-radius: 5px; display: none; }
-        button { background: #0088cc; color: white; border: none; padding: 12px; border-radius: 5px; cursor: pointer; width: 100%; font-size: 16px; }
+        button {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+        }
         .notice { font-size: 0.9em; color: #666; margin: 5px 0; }
+        .free-delivery-note {
+            font-weight: bold;
+            color: #28a745;
+            margin-top: 5px;
+            font-size: 1.1em;
+        }
         .cart-fab {
             position: fixed;
             bottom: 20px;
             right: 20px;
-            background: #0088cc;
-            color: white;
-            border: none;
+            background: white;
+            color: #28a745;
+            border: 2px solid #28a745;
             border-radius: 50%;
             width: 60px;
             height: 60px;
@@ -119,19 +133,16 @@
         <div class="section-title">Способ получения</div>
         <div class="radio-group-vertical">
             <label><input type="radio" name="delivery" value="pickup" checked> Самовывоз</label>
-            <label><input type="radio" name="delivery" value="free"> Бесплатная доставка от 15 000 руб</label>
             <label><input type="radio" name="delivery" value="courier"> Доставка курьером</label>
         </div>
 
+        <!-- Блок самовывоза -->
         <div id="pickup-block" class="delivery-block" style="display: block;"></div>
 
-        <div id="free-delivery-block" class="delivery-block">
-            <div>Укажите адрес</div>
-            <input type="text" id="free-address" class="address-input" placeholder="Адрес доставки">
-        </div>
-
+        <!-- Блок доставки курьером -->
         <div id="courier-block" class="delivery-block">
             <div class="notice">Доставка сервисом Яндекс за счет покупателя</div>
+            <div class="free-delivery-note">При заказе от 15 000 руб БЕСПЛАТНО</div>
             <div>Укажите адрес</div>
             <input type="text" id="courier-address" class="address-input" placeholder="Адрес доставки">
         </div>
@@ -148,11 +159,7 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        const userId = tg.initDataUnsafe?.user?.id;
-        if (!userId) {
-            alert('Ошибка: не удалось определить пользователя.');
-        }
-        console.log('Current userId:', userId);
+        const userId = tg.initDataUnsafe?.user?.id || 1; // реальный ID или заглушка
 
         let cart = null;
         let products = [];
@@ -173,7 +180,6 @@
         }
 
         async function loadCart() {
-            if (!userId) return;
             const res = await fetch(`/api/cart/${userId}`);
             cart = await res.json();
         }
@@ -240,16 +246,13 @@
 
         const deliveryRadios = document.querySelectorAll('input[name="delivery"]');
         const pickupBlock = document.getElementById('pickup-block');
-        const freeBlock = document.getElementById('free-delivery-block');
         const courierBlock = document.getElementById('courier-block');
 
         function updateDeliveryBlocks() {
             const selected = document.querySelector('input[name="delivery"]:checked').value;
             pickupBlock.style.display = 'none';
-            freeBlock.style.display = 'none';
             courierBlock.style.display = 'none';
             if (selected === 'pickup') pickupBlock.style.display = 'block';
-            else if (selected === 'free') freeBlock.style.display = 'block';
             else if (selected === 'courier') courierBlock.style.display = 'block';
         }
 
@@ -270,12 +273,6 @@
                     return;
                 }
                 address = pickupAddress.value;
-            } else if (deliveryType === 'free') {
-                address = document.getElementById('free-address').value.trim();
-                if (!address) {
-                    alert('Введите адрес доставки');
-                    return;
-                }
             } else if (deliveryType === 'courier') {
                 address = document.getElementById('courier-address').value.trim();
                 if (!address) {
@@ -284,12 +281,16 @@
                 }
             }
 
+            // Получаем данные пользователя из Telegram
+            const user = tg.initDataUnsafe?.user;
             const contact = {
-                name: 'Покупатель',
-                phone: '0000000000',
+                name: user?.first_name + (user?.last_name ? ' ' + user?.last_name : '') || 'Покупатель',
+                phone: '0000000000', // можно добавить поле в будущем
                 address: address,
                 paymentMethod: paymentMethod,
-                deliveryType: deliveryType
+                deliveryType: deliveryType,
+                username: user?.username,
+                userId: user?.id
             };
 
             const response = await fetch('/api/order', {
