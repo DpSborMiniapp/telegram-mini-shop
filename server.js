@@ -233,7 +233,8 @@ app.post('/api/order', async (req, res) => {
 
     console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact, seller_id, address_id, requestId });
 
-    // ========== ОТПРАВКА В БОТА ==========
+    // Отправка заказа в бота (синхронно)
+    let orderNumberFromBot = null;
     if (process.env.BOT_URL) {
       const botOrderData = {
         userId: numUserId,
@@ -246,16 +247,23 @@ app.post('/api/order', async (req, res) => {
         contact: contact,
         requestId: requestId
       };
-      fetch(`${process.env.BOT_URL}/api/new-order`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(botOrderData)
-      })
-      .then(response => response.json())
-      .then(data => console.log('✅ Заказ отправлен в бота:', data))
-      .catch(err => console.error('❌ Ошибка отправки в бота:', err));
+      try {
+        const botResponse = await fetch(`${process.env.BOT_URL}/api/new-order`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(botOrderData)
+        });
+        const botData = await botResponse.json();
+        if (botData.orderNumber) {
+          orderNumberFromBot = botData.orderNumber;
+          // Обновляем запись в базе, добавляя order_number
+          await pool.query('UPDATE orders SET order_number = $1 WHERE id = $2', [orderNumberFromBot, orderId]);
+        }
+        console.log('✅ Заказ отправлен в бота, получен номер:', orderNumberFromBot);
+      } catch (err) {
+        console.error('❌ Ошибка отправки в бота:', err);
+      }
     }
-    // ====================================
 
     res.json({ orderId });
 
