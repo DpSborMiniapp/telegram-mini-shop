@@ -154,20 +154,10 @@
         tg.expand();
 
         const userId = tg.initDataUnsafe?.user?.id || 1;
-        let isCancelling = false; // флаг для предотвращения повторных отмен
-
-        // Функция для блокировки всех кнопок отмены
-        function setCancelButtonsDisabled(disabled) {
-            document.querySelectorAll('.cancel-button').forEach(btn => {
-                btn.disabled = disabled;
-            });
-        }
 
         async function loadOrders() {
-            console.log('Загрузка заказов для userId:', userId);
             const response = await fetch(`/api/orders/${userId}`);
             const orders = await response.json();
-            console.log('Получены заказы:', orders);
             renderOrders(orders);
         }
 
@@ -190,6 +180,10 @@
             orders.sort((a, b) => b.id - a.id);
 
             orders.forEach(order => {
+                // Определяем отображаемый номер заказа: если есть order_number, используем его, иначе id
+                const displayNumber = order.order_number || order.id;
+
+                // Исходный статус из базы
                 const rawStatus = order.status;
                 let displayStatus = rawStatus;
                 if (displayStatus === 'active' || displayStatus === 'новый' || displayStatus === 'Активный') displayStatus = 'Активный';
@@ -229,6 +223,7 @@
                     }
                 }
 
+                // Проверка на возможность отмены
                 const normalizedStatus = rawStatus.trim().toLowerCase();
                 const canCancel = normalizedStatus === 'активный' || normalizedStatus === 'новый' || normalizedStatus === 'active';
                 const cancelButton = canCancel
@@ -247,7 +242,7 @@
                 card.className = 'order-card';
                 card.innerHTML = `
                     <div class="order-header">
-                        <span class="order-id">Заказ №${order.id}</span>
+                        <span class="order-id">Заказ №${displayNumber}</span>
                         <span class="order-status ${statusClass}">${displayStatus}</span>
                     </div>
                     <div class="order-items">
@@ -265,39 +260,18 @@
         }
 
         async function cancelOrder(orderId) {
-            if (isCancelling) {
-                console.log('Отмена уже выполняется, повторный клик игнорируется');
-                return;
-            }
             if (!confirm('Вы уверены, что хотите отменить заказ?')) return;
 
-            isCancelling = true;
-            setCancelButtonsDisabled(true);
-            console.log(`Отмена заказа ${orderId} начата`);
+            const response = await fetch(`/api/order/${orderId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'Отменен' })
+            });
 
-            try {
-                const response = await fetch(`/api/order/${orderId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'Отменен' })
-                });
-
-                console.log(`Ответ от сервера: статус ${response.status}`);
-                if (response.ok) {
-                    console.log(`Заказ ${orderId} успешно отменён`);
-                    await loadOrders(); // перезагружаем список
-                } else {
-                    const errorData = await response.json();
-                    console.error('Ошибка отмены:', errorData);
-                    alert('Ошибка при отмене заказа: ' + (errorData.error || 'Неизвестная ошибка'));
-                }
-            } catch (err) {
-                console.error('Исключение при отмене:', err);
+            if (response.ok) {
+                loadOrders();
+            } else {
                 alert('Ошибка при отмене заказа');
-            } finally {
-                isCancelling = false;
-                setCancelButtonsDisabled(false);
-                console.log('Отмена завершена');
             }
         }
 
