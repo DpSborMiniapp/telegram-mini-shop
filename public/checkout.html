@@ -164,8 +164,6 @@
         tg.expand();
 
         const userId = tg.initDataUnsafe?.user?.id || 1;
-
-        // ✅ Уникальный идентификатор для этого заказа (защита от дубликатов)
         const requestId = crypto.randomUUID();
         console.log('Request ID:', requestId);
 
@@ -271,7 +269,6 @@
 
         const confirmBtn = document.getElementById('confirm-button');
         confirmBtn.addEventListener('click', async (e) => {
-            // Блокируем кнопку, чтобы предотвратить повторные клики
             e.target.disabled = true;
 
             try {
@@ -310,33 +307,41 @@
                 const response = await fetch('/api/order', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        userId, 
-                        contact,
-                        requestId  // ✅ передаём уникальный идентификатор
-                    })
+                    body: JSON.stringify({ userId, contact, requestId })
                 });
 
                 if (response.ok) {
-                    // Успешно – переходим на страницу заказов
-                    window.location.href = 'orders.html';
+                    const result = await response.json();
+
+                    // Показываем напоминание о боте
+                    tg.showPopup({
+                        title: 'Заказ оформлен',
+                        message: 'Ваше общение с продавцом будет происходить в боте. Нажмите "Открыть бота", чтобы перейти в диалог.',
+                        buttons: [
+                            { id: 'open', type: 'default', text: 'Открыть бота' },
+                            { id: 'close', type: 'cancel', text: 'Позже' }
+                        ]
+                    }, (buttonId) => {
+                        if (buttonId === 'open') {
+                            tg.openTelegramLink('https://t.me/DpSborKatalogBot');
+                        }
+                        // После закрытия попапа переходим в заказы
+                        window.location.href = 'orders.html';
+                    });
                 } else {
                     const error = await response.json();
                     console.error('Ошибка при оформлении заказа:', error);
-
                     if (error.error === 'Duplicate order') {
                         alert('Заказ уже был оформлен. Проверьте список заказов.');
-                        // Можно сразу перейти в заказы, чтобы увидеть дубликат
                         window.location.href = 'orders.html';
                     } else {
                         alert('Ошибка при оформлении заказа. Попробуйте ещё раз.');
-                        // Разблокируем кнопку, чтобы можно было повторить
                         e.target.disabled = false;
                     }
                 }
             } catch (err) {
-                console.error('Непредвиденная ошибка:', err);
-                alert('Произошла ошибка. Попробуйте позже.');
+                console.error(err);
+                alert('Произошла ошибка');
                 e.target.disabled = false;
             }
         });
@@ -345,4 +350,3 @@
     </script>
 </body>
 </html>
-
