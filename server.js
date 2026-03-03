@@ -134,6 +134,8 @@ app.put('/api/order/:orderId', async (req, res) => {
   const orderId = parseInt(req.params.orderId, 10);
   const { status } = req.body;
 
+  console.log(`[DEBUG] PUT /api/order/${orderId} called with status:`, status);
+
   const allowed = ['Активный', 'Завершен', 'Отменен'];
   if (!allowed.includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
@@ -148,11 +150,14 @@ app.put('/api/order/:orderId', async (req, res) => {
 
     await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
     
+    console.log(`[DEBUG] Order ${orderId} updated to status:`, status);
+
     // Если заказ отменён, уведомляем основного бота
     if (status === 'Отменен' && BOT_URL) {
+      console.log(`[DEBUG] Attempting to send cancellation notification to bot. BOT_URL=${BOT_URL}`);
       const orderData = order.rows[0];
       try {
-        await fetch(`${BOT_URL}/api/order-cancelled`, {
+        const response = await fetch(`${BOT_URL}/api/order-cancelled`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -161,10 +166,18 @@ app.put('/api/order/:orderId', async (req, res) => {
             sellerId: orderData.seller_id
           })
         });
-        console.log(`Уведомление об отмене заказа ${orderData.order_number} отправлено боту`);
+        console.log(`[DEBUG] Bot response status:`, response.status);
+        if (response.ok) {
+          console.log(`✅ Уведомление об отмене заказа ${orderData.order_number} отправлено боту`);
+        } else {
+          const errorText = await response.text();
+          console.error(`❌ Ошибка от бота: ${response.status} ${errorText}`);
+        }
       } catch (err) {
-        console.error('Ошибка отправки уведомления боту:', err);
+        console.error('❌ Ошибка отправки уведомления боту:', err);
       }
+    } else {
+      console.log(`[DEBUG] Not sending cancellation: status=${status}, BOT_URL=${BOT_URL}`);
     }
 
     res.json({ success: true });
