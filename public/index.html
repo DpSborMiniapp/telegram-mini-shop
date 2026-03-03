@@ -100,7 +100,7 @@
         }
         .variant-info {
             text-align: left;
-            flex: 2; /* больше места для информации */
+            flex: 2;
         }
         .variant-name {
             font-weight: bold;
@@ -113,7 +113,7 @@
             display: flex;
             align-items: center;
             gap: 5px;
-            flex: 1; /* занимает оставшееся место */
+            flex: 1;
             justify-content: flex-end;
         }
         .variant-controls button {
@@ -135,8 +135,8 @@
             text-align: center;
         }
         .add-button {
-            width: 100%;           /* кнопка занимает всю ширину контейнера */
-            padding: 12px 0;        /* увеличиваем вертикальные отступы */
+            width: 100%;
+            padding: 12px 0;
             font-size: 16px;
             background: #28a745;
             color: white;
@@ -275,8 +275,11 @@
 
                 const imageUrl = product.image || 'https://via.placeholder.com/250?text=Нет+фото';
 
+                // Фильтруем варианты: исключаем "Россыпь"
+                const variantsToShow = product.variants.filter(v => v.name !== 'Россыпь');
+
                 let variantsHtml = '';
-                product.variants.forEach(variant => {
+                variantsToShow.forEach(variant => {
                     // Находим, есть ли этот вариант в корзине
                     const cartItem = cart.items.find(item => item.productId === product.id && item.variantId === variant.id);
                     const quantity = cartItem ? cartItem.quantity : 0;
@@ -348,4 +351,3 @@
     </script>
 </body>
 </html>
-
