@@ -280,6 +280,7 @@
 
                 let variantsHtml = '';
                 variantsToShow.forEach(variant => {
+                    // Находим, есть ли этот вариант в корзине
                     const cartItem = cart.items.find(item => item.productId === product.id && item.variantId === variant.id);
                     const quantity = cartItem ? cartItem.quantity : 0;
 
