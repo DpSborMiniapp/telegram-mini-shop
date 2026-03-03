@@ -20,10 +20,23 @@ app.use((req, res, next) => {
 
 // ==================== API ====================
 
+// Получение товаров с вариантами
 app.get('/api/products', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM products');
-    res.json(result.rows);
+    const products = await pool.query('SELECT * FROM products ORDER BY id');
+    const variants = await pool.query('SELECT * FROM product_variants ORDER BY product_id, sort_order');
+    
+    const variantsByProduct = variants.rows.reduce((acc, v) => {
+      if (!acc[v.product_id]) acc[v.product_id] = [];
+      acc[v.product_id].push(v);
+      return acc;
+    }, {});
+
+    const result = products.rows.map(p => ({
+      ...p,
+      variants: variantsByProduct[p.id] || []
+    }));
+    res.json(result);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Database error' });
