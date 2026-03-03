@@ -180,10 +180,10 @@
             orders.sort((a, b) => b.id - a.id);
 
             orders.forEach(order => {
-                // Определяем отображаемый номер заказа: если есть order_number, используем его, иначе id
+                // Определяем отображаемый номер заказа
                 const displayNumber = order.order_number || order.id;
 
-                // Исходный статус из базы
+                // Нормализация статуса
                 const rawStatus = order.status;
                 let displayStatus = rawStatus;
                 if (displayStatus === 'active' || displayStatus === 'новый' || displayStatus === 'Активный') displayStatus = 'Активный';
@@ -195,12 +195,17 @@
                 else if (displayStatus === 'Завершен') statusClass = 'status-completed';
                 else if (displayStatus === 'Отменен') statusClass = 'status-cancelled';
 
-                const itemsHtml = order.items.map(item => `
-                    <div class="order-item">
-                        <span>${item.name} × ${item.quantity}</span>
-                        <span>${item.price * item.quantity} руб.</span>
-                    </div>
-                `).join('');
+                // Формируем список товаров с учётом варианта и заменой "Упаковка" на "Уп."
+                const itemsHtml = order.items.map(item => {
+                    const variantDisplay = item.variantName ? item.variantName.replace('Упаковка', 'Уп.') : '';
+                    const itemName = variantDisplay ? `${item.name} (${variantDisplay})` : item.name;
+                    return `
+                        <div class="order-item">
+                            <span>${itemName} × ${item.quantity}</span>
+                            <span>${item.price * item.quantity} руб.</span>
+                        </div>
+                    `;
+                }).join('');
 
                 let infoHtml = '';
                 if (order.contact) {
