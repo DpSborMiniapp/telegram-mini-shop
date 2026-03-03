@@ -11,6 +11,8 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+const BOT_URL = process.env.BOT_URL; // URL основного бота
+
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
   next();
@@ -18,51 +20,31 @@ app.use((req, res, next) => {
 
 // ==================== API ====================
 
-// Получение всех товаров с вариантами
 app.get('/api/products', async (req, res) => {
   try {
-    const products = await pool.query('SELECT * FROM products ORDER BY id');
-    const variants = await pool.query('SELECT * FROM product_variants ORDER BY product_id, sort_order');
-    
-    const variantsByProduct = variants.rows.reduce((acc, v) => {
-      if (!acc[v.product_id]) acc[v.product_id] = [];
-      acc[v.product_id].push(v);
-      return acc;
-    }, {});
-
-    const result = products.rows.map(p => ({
-      ...p,
-      variants: variantsByProduct[p.id] || []
-    }));
-    res.json(result);
+    const result = await pool.query('SELECT * FROM products');
+    res.json(result.rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Database error' });
   }
 });
 
-// Получение корзины пользователя
 app.get('/api/cart/:userId', async (req, res) => {
   const userId = parseInt(req.params.userId, 10);
   try {
     const result = await pool.query(`
-      SELECT 
-        c.product_id, c.variant_id, c.quantity, c.price_at_time,
-        p.name, p.description, p.image,
-        v.name as variant_name, v.price
+      SELECT c.product_id, c.quantity, c.price_at_time, p.name, p.price, p.description, p.image
       FROM carts c
       JOIN products p ON c.product_id = p.id
-      LEFT JOIN product_variants v ON c.variant_id = v.id
       WHERE c.user_id = $1
     `, [userId]);
 
     const items = result.rows.map(row => ({
       productId: row.product_id,
-      variantId: row.variant_id,
       quantity: row.quantity,
       priceAtTime: row.price_at_time,
       name: row.name,
-      variantName: row.variant_name,
       price: row.price,
       description: row.description,
       image: row.image
@@ -75,31 +57,25 @@ app.get('/api/cart/:userId', async (req, res) => {
   }
 });
 
-// Добавление товара в корзину
 app.post('/api/cart/add', async (req, res) => {
-  const { userId, productId, variantId, quantity } = req.body;
+  const { userId, productId, quantity } = req.body;
   const numUserId = parseInt(userId, 10);
   const numProductId = parseInt(productId, 10);
-  const numVariantId = parseInt(variantId, 10);
   const numQuantity = parseInt(quantity, 10);
 
   try {
-    // Проверяем, что вариант существует и принадлежит товару
-    const variant = await pool.query(
-      'SELECT price FROM product_variants WHERE id = $1 AND product_id = $2',
-      [numVariantId, numProductId]
-    );
-    if (variant.rows.length === 0) {
-      return res.status(400).json({ error: 'Invalid variant' });
+    const product = await pool.query('SELECT price FROM products WHERE id = $1', [numProductId]);
+    if (product.rows.length === 0) {
+      return res.status(404).json({ error: 'Product not found' });
     }
-    const price = variant.rows[0].price;
+    const price = product.rows[0].price;
 
     await pool.query(`
-      INSERT INTO carts (user_id, product_id, variant_id, quantity, price_at_time)
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (user_id, product_id, variant_id)
+      INSERT INTO carts (user_id, product_id, quantity, price_at_time)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (user_id, product_id)
       DO UPDATE SET quantity = carts.quantity + EXCLUDED.quantity
-    `, [numUserId, numProductId, numVariantId, numQuantity, price]);
+    `, [numUserId, numProductId, numQuantity, price]);
 
     res.json({ success: true });
   } catch (err) {
@@ -108,27 +84,22 @@ app.post('/api/cart/add', async (req, res) => {
   }
 });
 
-// Обновление количества конкретного варианта
 app.post('/api/cart/update', async (req, res) => {
-  const { userId, productId, variantId, quantity } = req.body;
+  const { userId, productId, quantity } = req.body;
   const numUserId = parseInt(userId, 10);
   const numProductId = parseInt(productId, 10);
-  const numVariantId = parseInt(variantId, 10);
   const numQuantity = parseInt(quantity, 10);
 
   if (numQuantity < 0) return res.status(400).json({ error: 'Quantity must be non-negative' });
 
   try {
     if (numQuantity === 0) {
-      await pool.query(
-        'DELETE FROM carts WHERE user_id = $1 AND product_id = $2 AND variant_id = $3',
-        [numUserId, numProductId, numVariantId]
-      );
+      await pool.query('DELETE FROM carts WHERE user_id = $1 AND product_id = $2', [numUserId, numProductId]);
     } else {
       await pool.query(`
         UPDATE carts SET quantity = $1
-        WHERE user_id = $2 AND product_id = $3 AND variant_id = $4
-      `, [numQuantity, numUserId, numProductId, numVariantId]);
+        WHERE user_id = $2 AND product_id = $3
+      `, [numQuantity, numUserId, numProductId]);
     }
     res.json({ success: true });
   } catch (err) {
@@ -137,14 +108,10 @@ app.post('/api/cart/update', async (req, res) => {
   }
 });
 
-// Удаление варианта из корзины
 app.delete('/api/cart/remove', async (req, res) => {
-  const { userId, productId, variantId } = req.body;
+  const { userId, productId } = req.body;
   try {
-    await pool.query(
-      'DELETE FROM carts WHERE user_id = $1 AND product_id = $2 AND variant_id = $3',
-      [userId, productId, variantId]
-    );
+    await pool.query('DELETE FROM carts WHERE user_id = $1 AND product_id = $2', [userId, productId]);
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -152,7 +119,6 @@ app.delete('/api/cart/remove', async (req, res) => {
   }
 });
 
-// Получение заказов пользователя
 app.get('/api/orders/:userId', async (req, res) => {
   const userId = parseInt(req.params.userId, 10);
   try {
@@ -164,7 +130,6 @@ app.get('/api/orders/:userId', async (req, res) => {
   }
 });
 
-// Обновление статуса заказа
 app.put('/api/order/:orderId', async (req, res) => {
   const orderId = parseInt(req.params.orderId, 10);
   const { status } = req.body;
@@ -175,13 +140,33 @@ app.put('/api/order/:orderId', async (req, res) => {
   }
 
   try {
-    const order = await pool.query('SELECT status FROM orders WHERE id = $1', [orderId]);
+    const order = await pool.query('SELECT status, seller_id, order_number FROM orders WHERE id = $1', [orderId]);
     if (order.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     if (order.rows[0].status !== 'Активный' && status !== order.rows[0].status) {
       return res.status(400).json({ error: 'Cannot change non-active order' });
     }
 
     await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
+    
+    // Если заказ отменён, уведомляем основного бота
+    if (status === 'Отменен' && BOT_URL) {
+      const orderData = order.rows[0];
+      try {
+        await fetch(`${BOT_URL}/api/order-cancelled`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId: orderId,
+            orderNumber: orderData.order_number,
+            sellerId: orderData.seller_id
+          })
+        });
+        console.log(`Уведомление об отмене заказа ${orderData.order_number} отправлено боту`);
+      } catch (err) {
+        console.error('Ошибка отправки уведомления боту:', err);
+      }
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -189,7 +174,6 @@ app.put('/api/order/:orderId', async (req, res) => {
   }
 });
 
-// Получение точек самовывоза
 app.get('/api/pickup-locations', async (req, res) => {
   try {
     const result = await pool.query(
@@ -202,7 +186,6 @@ app.get('/api/pickup-locations', async (req, res) => {
   }
 });
 
-// Создание заказа
 app.post('/api/order', async (req, res) => {
   const { userId, contact, requestId } = req.body;
   const numUserId = parseInt(userId, 10);
@@ -233,15 +216,10 @@ app.post('/api/order', async (req, res) => {
       seller_id = addrResult.rows[0].seller_id;
     }
 
-    // Получаем содержимое корзины с вариантами
     const cartResult = await pool.query(`
-      SELECT 
-        c.product_id, c.variant_id, c.quantity, c.price_at_time,
-        p.name,
-        v.name as variant_name
+      SELECT c.product_id, c.quantity, c.price_at_time, p.name
       FROM carts c
       JOIN products p ON c.product_id = p.id
-      LEFT JOIN product_variants v ON c.variant_id = v.id
       WHERE c.user_id = $1
     `, [numUserId]);
 
@@ -255,9 +233,7 @@ app.post('/api/order', async (req, res) => {
       total += itemTotal;
       return {
         productId: row.product_id,
-        variantId: row.variant_id,
         name: row.name,
-        variantName: row.variant_name,
         quantity: row.quantity,
         price: row.price_at_time,
       };
@@ -275,12 +251,11 @@ app.post('/api/order', async (req, res) => {
 
     const orderId = insertResult.rows[0].id;
 
-    // Очищаем корзину
     await pool.query('DELETE FROM carts WHERE user_id = $1', [numUserId]);
 
     console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact, seller_id, address_id, requestId });
 
-    // Отправка заказа в бота (если настроено)
+    // Отправка заказа в бота (синхронно)
     let orderNumberFromBot = null;
     if (process.env.BOT_URL) {
       const botOrderData = {
@@ -303,6 +278,7 @@ app.post('/api/order', async (req, res) => {
         const botData = await botResponse.json();
         if (botData.orderNumber) {
           orderNumberFromBot = botData.orderNumber;
+          // Обновляем запись в базе, добавляя order_number
           await pool.query('UPDATE orders SET order_number = $1 WHERE id = $2', [orderNumberFromBot, orderId]);
         }
         console.log('✅ Заказ отправлен в бота, получен номер:', orderNumberFromBot);
