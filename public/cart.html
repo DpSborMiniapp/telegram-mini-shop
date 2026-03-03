@@ -196,9 +196,11 @@
 
                 const div = document.createElement('div');
                 div.className = 'cart-item';
+                // Замена "Упаковка" на "Уп." при отображении
+                const variantDisplay = item.variantName ? item.variantName.replace('Упаковка', 'Уп.') : '';
                 div.innerHTML = `
                     <div class="item-details">
-                        <span><strong>${product.name} (${item.variantName})</strong></span>
+                        <span><strong>${product.name} (${variantDisplay})</strong></span>
                         <span>${price} руб.</span>
                     </div>
                     <div class="item-controls">
