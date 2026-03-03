@@ -20,23 +20,10 @@ app.use((req, res, next) => {
 
 // ==================== API ====================
 
-// Получение товаров с вариантами
 app.get('/api/products', async (req, res) => {
   try {
-    const products = await pool.query('SELECT * FROM products ORDER BY id');
-    const variants = await pool.query('SELECT * FROM product_variants ORDER BY product_id, sort_order');
-    
-    const variantsByProduct = variants.rows.reduce((acc, v) => {
-      if (!acc[v.product_id]) acc[v.product_id] = [];
-      acc[v.product_id].push(v);
-      return acc;
-    }, {});
-
-    const result = products.rows.map(p => ({
-      ...p,
-      variants: variantsByProduct[p.id] || []
-    }));
-    res.json(result);
+    const result = await pool.query('SELECT * FROM products');
+    res.json(result.rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Database error' });
@@ -147,8 +134,6 @@ app.put('/api/order/:orderId', async (req, res) => {
   const orderId = parseInt(req.params.orderId, 10);
   const { status } = req.body;
 
-  console.log(`[DEBUG] PUT /api/order/${orderId} called with status:`, status);
-
   const allowed = ['Активный', 'Завершен', 'Отменен'];
   if (!allowed.includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
@@ -163,14 +148,11 @@ app.put('/api/order/:orderId', async (req, res) => {
 
     await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
     
-    console.log(`[DEBUG] Order ${orderId} updated to status:`, status);
-
     // Если заказ отменён, уведомляем основного бота
     if (status === 'Отменен' && BOT_URL) {
-      console.log(`[DEBUG] Attempting to send cancellation notification to bot. BOT_URL=${BOT_URL}`);
       const orderData = order.rows[0];
       try {
-        const response = await fetch(`${BOT_URL}/api/order-cancelled`, {
+        await fetch(`${BOT_URL}/api/order-cancelled`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -179,18 +161,10 @@ app.put('/api/order/:orderId', async (req, res) => {
             sellerId: orderData.seller_id
           })
         });
-        console.log(`[DEBUG] Bot response status:`, response.status);
-        if (response.ok) {
-          console.log(`✅ Уведомление об отмене заказа ${orderData.order_number} отправлено боту`);
-        } else {
-          const errorText = await response.text();
-          console.error(`❌ Ошибка от бота: ${response.status} ${errorText}`);
-        }
+        console.log(`Уведомление об отмене заказа ${orderData.order_number} отправлено боту`);
       } catch (err) {
-        console.error('❌ Ошибка отправки уведомления боту:', err);
+        console.error('Ошибка отправки уведомления боту:', err);
       }
-    } else {
-      console.log(`[DEBUG] Not sending cancellation: status=${status}, BOT_URL=${BOT_URL}`);
     }
 
     res.json({ success: true });
