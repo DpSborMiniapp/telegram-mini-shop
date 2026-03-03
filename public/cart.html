@@ -190,7 +190,7 @@
                 const product = products.find(p => p.id === item.productId);
                 if (!product) return;
 
-                const price = item.priceAtTime || product.price;
+                const price = item.priceAtTime;
                 const itemTotal = price * item.quantity;
                 total += itemTotal;
 
@@ -198,14 +198,14 @@
                 div.className = 'cart-item';
                 div.innerHTML = `
                     <div class="item-details">
-                        <span><strong>${product.name}</strong></span>
+                        <span><strong>${product.name} (${item.variantName})</strong></span>
                         <span>${price} руб.</span>
                     </div>
                     <div class="item-controls">
-                        <button onclick="updateQuantity(${item.productId}, ${item.quantity - 1})">-</button>
-                        <span class="quantity" id="qty-${item.productId}">${item.quantity}</span>
-                        <button onclick="updateQuantity(${item.productId}, ${item.quantity + 1})">+</button>
-                        <button onclick="removeItem(${item.productId})" style="background:#d32f2f;">Удалить</button>
+                        <button onclick="updateQuantity(${item.productId}, ${item.variantId}, ${item.quantity - 1})">-</button>
+                        <span class="quantity" id="qty-${item.productId}-${item.variantId}">${item.quantity}</span>
+                        <button onclick="updateQuantity(${item.productId}, ${item.variantId}, ${item.quantity + 1})">+</button>
+                        <button onclick="removeItem(${item.productId}, ${item.variantId})" style="background:#d32f2f;">Удалить</button>
                     </div>
                     <div class="item-total">Сумма: ${itemTotal} руб.</div>
                 `;
@@ -218,37 +218,37 @@
             `;
         }
 
-        async function updateQuantity(productId, newQuantity) {
+        async function updateQuantity(productId, variantId, newQuantity) {
             if (newQuantity < 0) return;
 
             if (newQuantity === 0) {
-                await removeItem(productId);
+                await removeItem(productId, variantId);
                 return;
             }
 
             const response = await fetch('/api/cart/update', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, productId, quantity: newQuantity })
+                body: JSON.stringify({ userId, productId, variantId, quantity: newQuantity })
             });
 
             if (response.ok) {
-                const item = cart.items.find(i => i.productId === productId);
+                const item = cart.items.find(i => i.productId === productId && i.variantId === variantId);
                 if (item) item.quantity = newQuantity;
                 renderCart();
                 updateCartCount();
             }
         }
 
-        async function removeItem(productId) {
+        async function removeItem(productId, variantId) {
             const response = await fetch('/api/cart/remove', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, productId })
+                body: JSON.stringify({ userId, productId, variantId })
             });
 
             if (response.ok) {
-                cart.items = cart.items.filter(i => i.productId !== productId);
+                cart.items = cart.items.filter(i => !(i.productId === productId && i.variantId === variantId));
                 renderCart();
                 updateCartCount();
             }
