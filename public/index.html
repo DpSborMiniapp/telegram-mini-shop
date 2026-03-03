@@ -83,35 +83,62 @@
         .product-info {
             width: 100%;
         }
-        .product-controls {
+        .variants-container {
+            width: 100%;
+            margin: 10px 0;
+        }
+        .variant-row {
             display: flex;
             align-items: center;
-            justify-content: center;
-            margin-top: 12px;
-            width: 100%;
+            justify-content: space-between;
+            border-top: 1px solid #eee;
+            padding: 10px 0;
         }
-        .product-controls button {
+        .variant-row:first-of-type {
+            border-top: none;
+        }
+        .variant-info {
+            text-align: left;
+        }
+        .variant-name {
+            font-weight: bold;
+        }
+        .variant-price {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .variant-controls {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .variant-controls button {
             background: #28a745;
             color: white;
             border: none;
-            padding: 8px 15px;
+            padding: 5px 10px;
             border-radius: 5px;
             cursor: pointer;
-            margin-right: 5px;
-            flex: 1;
-            font-size: 14px;
+            font-size: 16px;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-        .product-controls .quantity {
-            margin: 0 10px;
+        .variant-controls .quantity {
             font-weight: bold;
             min-width: 30px;
             text-align: center;
         }
-        .in-cart-text {
-            margin-left: 10px;
-            color: #28a745;
-            font-size: 0.9em;
-            font-weight: bold;
+        .add-button {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
         }
         .cart-fab {
             position: fixed;
@@ -234,91 +261,76 @@
             container.appendChild(catDiv);
 
             productsList.forEach(product => {
-                const cartItem = cart.items.find(item => item.productId === product.id);
-                const inCart = !!cartItem;
-
-                const div = document.createElement('div');
-                div.className = 'product';
-                div.setAttribute('data-product-id', product.id);
+                const productDiv = document.createElement('div');
+                productDiv.className = 'product';
+                productDiv.setAttribute('data-product-id', product.id);
 
                 const imageUrl = product.image || 'https://via.placeholder.com/250?text=Нет+фото';
 
-                let controlsHtml = '';
-                if (inCart) {
-                    controlsHtml = `
-                        <div class="product-controls">
-                            <button onclick="decrementQuantity(${product.id})">-</button>
-                            <span class="quantity" id="qty-${product.id}">${cartItem.quantity}</span>
-                            <button onclick="incrementQuantity(${product.id})">+</button>
-                            <span class="in-cart-text">В корзине</span>
-                        </div>
-                    `;
-                } else {
-                    controlsHtml = `
-                        <div class="product-controls">
-                            <button onclick="addToCart(${product.id})">В корзину</button>
-                        </div>
-                    `;
-                }
+                let variantsHtml = '';
+                product.variants.forEach(variant => {
+                    // Находим, есть ли этот вариант в корзине
+                    const cartItem = cart.items.find(item => item.productId === product.id && item.variantId === variant.id);
+                    const quantity = cartItem ? cartItem.quantity : 0;
 
-                div.innerHTML = `
+                    variantsHtml += `
+                        <div class="variant-row" data-product-id="${product.id}" data-variant-id="${variant.id}">
+                            <div class="variant-info">
+                                <div class="variant-name">${variant.name}</div>
+                                <div class="variant-price">${variant.price} руб.</div>
+                            </div>
+                            <div class="variant-controls">
+                                ${quantity === 0 ? 
+                                    `<button class="add-button" onclick="addToCart(${product.id}, ${variant.id})">В корзину</button>` :
+                                    `<button onclick="updateQuantity(${product.id}, ${variant.id}, ${quantity - 1})">-</button>
+                                     <span class="quantity" id="qty-${product.id}-${variant.id}">${quantity}</span>
+                                     <button onclick="updateQuantity(${product.id}, ${variant.id}, ${quantity + 1})">+</button>`
+                                }
+                            </div>
+                        </div>
+                    `;
+                });
+
+                productDiv.innerHTML = `
                     <img src="${imageUrl}" class="product-image" alt="${product.name}">
                     <div class="product-info">
                         <h3>${product.name}</h3>
                         <p>${product.description}</p>
-                        <p><strong>${product.price} руб.</strong></p>
-                        ${controlsHtml}
+                        <div class="variants-container">
+                            ${variantsHtml}
+                        </div>
                     </div>
                 `;
-                container.appendChild(div);
+                container.appendChild(productDiv);
             });
         }
 
-        async function addToCart(productId) {
+        async function addToCart(productId, variantId) {
             await fetch('/api/cart/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, productId, quantity: 1 })
+                body: JSON.stringify({ userId, productId, variantId, quantity: 1 })
             });
             await loadCart();
             renderProducts();
             updateCartCount();
         }
 
-        async function incrementQuantity(productId) {
-            const cartItem = cart.items.find(item => item.productId === productId);
-            if (!cartItem) return;
-            await updateQuantity(productId, cartItem.quantity + 1);
-        }
-
-        async function decrementQuantity(productId) {
-            const cartItem = cart.items.find(item => item.productId === productId);
-            if (!cartItem) return;
-            const newQuantity = cartItem.quantity - 1;
+        async function updateQuantity(productId, variantId, newQuantity) {
+            if (newQuantity < 0) return;
             if (newQuantity === 0) {
-                await removeItem(productId);
+                await fetch('/api/cart/remove', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId, productId, variantId })
+                });
             } else {
-                await updateQuantity(productId, newQuantity);
+                await fetch('/api/cart/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId, productId, variantId, quantity: newQuantity })
+                });
             }
-        }
-
-        async function updateQuantity(productId, newQuantity) {
-            await fetch('/api/cart/update', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, productId, quantity: newQuantity })
-            });
-            await loadCart();
-            renderProducts();
-            updateCartCount();
-        }
-
-        async function removeItem(productId) {
-            await fetch('/api/cart/remove', {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, productId })
-            });
             await loadCart();
             renderProducts();
             updateCartCount();
