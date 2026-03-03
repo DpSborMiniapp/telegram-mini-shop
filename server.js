@@ -84,7 +84,6 @@ app.post('/api/cart/add', async (req, res) => {
   const numQuantity = parseInt(quantity, 10);
 
   try {
-    // Проверяем, что вариант существует и принадлежит товару
     const variant = await pool.query(
       'SELECT price FROM product_variants WHERE id = $1 AND product_id = $2',
       [numVariantId, numProductId]
@@ -164,7 +163,7 @@ app.get('/api/orders/:userId', async (req, res) => {
   }
 });
 
-// Обновление статуса заказа
+// Обновление статуса заказа (включая отмену)
 app.put('/api/order/:orderId', async (req, res) => {
   const orderId = parseInt(req.params.orderId, 10);
   const { status } = req.body;
@@ -175,13 +174,41 @@ app.put('/api/order/:orderId', async (req, res) => {
   }
 
   try {
-    const order = await pool.query('SELECT status FROM orders WHERE id = $1', [orderId]);
+    const order = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
     if (order.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
-    if (order.rows[0].status !== 'Активный' && status !== order.rows[0].status) {
+    const currentStatus = order.rows[0].status;
+    if (currentStatus !== 'Активный' && status !== currentStatus) {
       return res.status(400).json({ error: 'Cannot change non-active order' });
     }
 
     await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
+
+    // Если заказ отменён, уведомляем бота
+    if (status === 'Отменен') {
+      const orderData = order.rows[0];
+      const sellerId = orderData.seller_id;
+      const userId = orderData.user_id;
+      const orderNumber = orderData.order_number;
+
+      if (process.env.BOT_URL) {
+        try {
+          await fetch(`${process.env.BOT_URL}/api/order-cancelled`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderId: orderId,
+              orderNumber: orderNumber,
+              userId: userId,
+              sellerId: sellerId
+            })
+          });
+          console.log(`✅ Уведомление об отмене заказа ${orderNumber} отправлено в бот`);
+        } catch (err) {
+          console.error('❌ Ошибка отправки уведомления об отмене в бот:', err);
+        }
+      }
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -214,14 +241,12 @@ app.post('/api/order', async (req, res) => {
   }
 
   try {
-    // Проверка на дубликат
     const existing = await pool.query('SELECT id FROM orders WHERE request_id = $1', [requestId]);
     if (existing.rows.length > 0) {
       console.log(`⚠️ Дублирующийся запрос с requestId ${requestId} отклонён`);
       return res.status(409).json({ error: 'Duplicate order' });
     }
 
-    // Получаем seller_id и address_id, если это самовывоз
     let seller_id = null;
     let address_id = null;
     if (deliveryType === 'pickup') {
@@ -233,7 +258,6 @@ app.post('/api/order', async (req, res) => {
       seller_id = addrResult.rows[0].seller_id;
     }
 
-    // Получаем содержимое корзины с вариантами
     const cartResult = await pool.query(`
       SELECT 
         c.product_id, c.variant_id, c.quantity, c.price_at_time,
@@ -266,7 +290,6 @@ app.post('/api/order', async (req, res) => {
     const itemsJson = JSON.stringify(orderItems);
     const contactJson = JSON.stringify(contact);
 
-    // Вставляем заказ
     const insertResult = await pool.query(`
       INSERT INTO orders (user_id, seller_id, address_id, items, total, contact, status, request_id)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -275,12 +298,10 @@ app.post('/api/order', async (req, res) => {
 
     const orderId = insertResult.rows[0].id;
 
-    // Очищаем корзину
     await pool.query('DELETE FROM carts WHERE user_id = $1', [numUserId]);
 
     console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact, seller_id, address_id, requestId });
 
-    // Отправка заказа в бота (если настроено)
     let orderNumberFromBot = null;
     if (process.env.BOT_URL) {
       const botOrderData = {
