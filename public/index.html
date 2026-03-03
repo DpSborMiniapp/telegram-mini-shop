@@ -93,12 +93,14 @@
             justify-content: space-between;
             border-top: 1px solid #eee;
             padding: 10px 0;
+            gap: 10px;
         }
         .variant-row:first-of-type {
             border-top: none;
         }
         .variant-info {
             text-align: left;
+            flex: 2; /* больше места для информации */
         }
         .variant-name {
             font-weight: bold;
@@ -111,17 +113,18 @@
             display: flex;
             align-items: center;
             gap: 5px;
+            flex: 1; /* занимает оставшееся место */
+            justify-content: flex-end;
         }
         .variant-controls button {
             background: #28a745;
             color: white;
             border: none;
-            padding: 5px 10px;
+            padding: 8px 12px;
             border-radius: 5px;
             cursor: pointer;
             font-size: 16px;
-            width: 36px;
-            height: 36px;
+            min-width: 40px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -132,13 +135,18 @@
             text-align: center;
         }
         .add-button {
+            width: 100%;           /* кнопка занимает всю ширину контейнера */
+            padding: 12px 0;        /* увеличиваем вертикальные отступы */
+            font-size: 16px;
             background: #28a745;
             color: white;
             border: none;
-            padding: 8px 16px;
             border-radius: 5px;
             cursor: pointer;
-            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .add-button:hover {
+            background: #218838;
         }
         .cart-fab {
             position: fixed;
@@ -340,3 +348,4 @@
     </script>
 </body>
 </html>
+
