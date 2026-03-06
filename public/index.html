@@ -183,6 +183,13 @@
             border-bottom: 2px solid #28a745;
             padding-bottom: 5px;
         }
+        .unavailable {
+            color: #999;
+            font-style: italic;
+            padding: 12px 0;
+            text-align: center;
+            width: 100%;
+        }
     </style>
 </head>
 <body>
@@ -275,14 +282,27 @@
 
                 const imageUrl = product.image || 'https://via.placeholder.com/250?text=Нет+фото';
 
-                // Фильтруем варианты: исключаем "Россыпь"
+                // Фильтруем варианты: исключаем "Россыпь" (но можно оставить для отладки)
                 const variantsToShow = product.variants.filter(v => v.name !== 'Россыпь');
 
                 let variantsHtml = '';
                 variantsToShow.forEach(variant => {
-                    // Находим, есть ли этот вариант в корзине
                     const cartItem = cart.items.find(item => item.productId === product.id && item.variantId === variant.id);
                     const quantity = cartItem ? cartItem.quantity : 0;
+                    const isActive = variant.is_active; // true/false
+
+                    let controlsHtml = '';
+                    if (!isActive) {
+                        controlsHtml = `<div class="unavailable">Нет в наличии</div>`;
+                    } else if (quantity === 0) {
+                        controlsHtml = `<button class="add-button" onclick="addToCart(${product.id}, ${variant.id})">В корзину</button>`;
+                    } else {
+                        controlsHtml = `
+                            <button onclick="updateQuantity(${product.id}, ${variant.id}, ${quantity - 1})">-</button>
+                            <span class="quantity" id="qty-${product.id}-${variant.id}">${quantity}</span>
+                            <button onclick="updateQuantity(${product.id}, ${variant.id}, ${quantity + 1})">+</button>
+                        `;
+                    }
 
                     variantsHtml += `
                         <div class="variant-row" data-product-id="${product.id}" data-variant-id="${variant.id}">
@@ -291,12 +311,7 @@
                                 <div class="variant-price">${variant.price} руб.</div>
                             </div>
                             <div class="variant-controls">
-                                ${quantity === 0 ? 
-                                    `<button class="add-button" onclick="addToCart(${product.id}, ${variant.id})">В корзину</button>` :
-                                    `<button onclick="updateQuantity(${product.id}, ${variant.id}, ${quantity - 1})">-</button>
-                                     <span class="quantity" id="qty-${product.id}-${variant.id}">${quantity}</span>
-                                     <button onclick="updateQuantity(${product.id}, ${variant.id}, ${quantity + 1})">+</button>`
-                                }
+                                ${controlsHtml}
                             </div>
                         </div>
                     `;
