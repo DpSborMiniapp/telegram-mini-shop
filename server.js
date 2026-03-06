@@ -22,7 +22,11 @@ app.use((req, res, next) => {
 app.get('/api/products', async (req, res) => {
   try {
     const products = await pool.query('SELECT * FROM products ORDER BY id');
-    const variants = await pool.query('SELECT * FROM product_variants ORDER BY product_id, sort_order');
+    const variants = await pool.query(`
+      SELECT id, product_id, name, price, price_seller, weight_kg, sort_order, is_active
+      FROM product_variants
+      ORDER BY product_id, sort_order
+    `);
     
     const variantsByProduct = variants.rows.reduce((acc, v) => {
       if (!acc[v.product_id]) acc[v.product_id] = [];
@@ -84,12 +88,16 @@ app.post('/api/cart/add', async (req, res) => {
   const numQuantity = parseInt(quantity, 10);
 
   try {
+    // Проверяем существование и активность варианта
     const variant = await pool.query(
-      'SELECT price FROM product_variants WHERE id = $1 AND product_id = $2',
+      'SELECT price, is_active FROM product_variants WHERE id = $1 AND product_id = $2',
       [numVariantId, numProductId]
     );
     if (variant.rows.length === 0) {
       return res.status(400).json({ error: 'Invalid variant' });
+    }
+    if (!variant.rows[0].is_active) {
+      return res.status(400).json({ error: 'Variant is not active' });
     }
     const price = variant.rows[0].price;
 
@@ -107,7 +115,7 @@ app.post('/api/cart/add', async (req, res) => {
   }
 });
 
-// Обновление количества конкретного варианта
+// Обновление количества
 app.post('/api/cart/update', async (req, res) => {
   const { userId, productId, variantId, quantity } = req.body;
   const numUserId = parseInt(userId, 10);
@@ -136,7 +144,7 @@ app.post('/api/cart/update', async (req, res) => {
   }
 });
 
-// Удаление варианта из корзины
+// Удаление из корзины
 app.delete('/api/cart/remove', async (req, res) => {
   const { userId, productId, variantId } = req.body;
   try {
@@ -163,7 +171,7 @@ app.get('/api/orders/:userId', async (req, res) => {
   }
 });
 
-// Обновление статуса заказа (включая отмену)
+// Обновление статуса заказа
 app.put('/api/order/:orderId', async (req, res) => {
   const orderId = parseInt(req.params.orderId, 10);
   const { status } = req.body;
@@ -174,41 +182,13 @@ app.put('/api/order/:orderId', async (req, res) => {
   }
 
   try {
-    const order = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+    const order = await pool.query('SELECT status FROM orders WHERE id = $1', [orderId]);
     if (order.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
-    const currentStatus = order.rows[0].status;
-    if (currentStatus !== 'Активный' && status !== currentStatus) {
+    if (order.rows[0].status !== 'Активный' && status !== order.rows[0].status) {
       return res.status(400).json({ error: 'Cannot change non-active order' });
     }
 
     await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
-
-    // Если заказ отменён, уведомляем бота
-    if (status === 'Отменен') {
-      const orderData = order.rows[0];
-      const sellerId = orderData.seller_id;
-      const userId = orderData.user_id;
-      const orderNumber = orderData.order_number;
-
-      if (process.env.BOT_URL) {
-        try {
-          await fetch(`${process.env.BOT_URL}/api/order-cancelled`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              orderId: orderId,
-              orderNumber: orderNumber,
-              userId: userId,
-              sellerId: sellerId
-            })
-          });
-          console.log(`✅ Уведомление об отмене заказа ${orderNumber} отправлено в бот`);
-        } catch (err) {
-          console.error('❌ Ошибка отправки уведомления об отмене в бот:', err);
-        }
-      }
-    }
-
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -241,6 +221,7 @@ app.post('/api/order', async (req, res) => {
   }
 
   try {
+    // Проверка на дубликат
     const existing = await pool.query('SELECT id FROM orders WHERE request_id = $1', [requestId]);
     if (existing.rows.length > 0) {
       console.log(`⚠️ Дублирующийся запрос с requestId ${requestId} отклонён`);
@@ -332,7 +313,7 @@ app.post('/api/order', async (req, res) => {
       }
     }
 
-    res.json({ orderId });
+    res.json({ orderId: orderId, orderNumber: orderNumberFromBot }); // возвращаем и orderNumber для клиента
 
   } catch (err) {
     console.error(err);
