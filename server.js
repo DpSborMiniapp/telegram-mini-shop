@@ -21,23 +21,65 @@ app.use((req, res, next) => {
 // Получение всех товаров с вариантами
 app.get('/api/products', async (req, res) => {
   try {
-    const products = await pool.query('SELECT * FROM products ORDER BY id');
-    const variants = await pool.query(`
-      SELECT id, product_id, name, price, price_seller, weight_kg, sort_order, is_active
-      FROM product_variants
-      ORDER BY product_id, sort_order
+    // Получаем все продукты
+    const products = await pool.query(`
+      SELECT id, name, description, image, category 
+      FROM products 
+      ORDER BY id
     `);
     
-    const variantsByProduct = variants.rows.reduce((acc, v) => {
-      if (!acc[v.product_id]) acc[v.product_id] = [];
-      acc[v.product_id].push(v);
-      return acc;
-    }, {});
+    // Получаем все варианты с дополнительной информацией
+    const variants = await pool.query(`
+      SELECT 
+        v.id, 
+        v.product_id, 
+        v.name, 
+        v.price, 
+        v.weight_kg, 
+        v.packaging_cost,
+        v.sort_order,
+        v.is_active,
+        p.purchase_price_kg
+      FROM product_variants v
+      JOIN products p ON v.product_id = p.id
+      ORDER BY v.product_id, v.sort_order
+    `);
+    
+    // Группируем варианты по product_id и рассчитываем price_seller
+    const variantsByProduct = {};
+    variants.rows.forEach(v => {
+      if (!variantsByProduct[v.product_id]) {
+        variantsByProduct[v.product_id] = [];
+      }
+      
+      // Рассчитываем price_seller по формуле
+      const base_cost = (v.purchase_price_kg * v.weight_kg) + (v.packaging_cost || 0);
+      const avg_price = (v.price + base_cost) / 2;
+      const price_seller = Math.ceil(avg_price / 10) * 10;
+      
+      // Добавляем рассчитанное поле к варианту
+      variantsByProduct[v.product_id].push({
+        id: v.id,
+        name: v.name,
+        price: v.price,
+        price_seller: price_seller,
+        weight_kg: v.weight_kg,
+        packaging_cost: v.packaging_cost,
+        sort_order: v.sort_order,
+        is_active: v.is_active
+      });
+    });
 
+    // Формируем результат
     const result = products.rows.map(p => ({
-      ...p,
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      image: p.image,
+      category: p.category,
       variants: variantsByProduct[p.id] || []
     }));
+    
     res.json(result);
   } catch (err) {
     console.error(err);
@@ -189,6 +231,31 @@ app.put('/api/order/:orderId', async (req, res) => {
     }
 
     await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
+    
+    // Если заказ отменён, уведомляем бота
+    if (status === 'Отменен') {
+      const orderData = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+      const orderInfo = orderData.rows[0];
+      
+      if (process.env.BOT_URL) {
+        try {
+          await fetch(`${process.env.BOT_URL}/api/order-cancelled`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderId: orderId,
+              orderNumber: orderInfo.order_number,
+              userId: orderInfo.user_id,
+              sellerId: orderInfo.seller_id
+            })
+          });
+          console.log(`✅ Уведомление об отмене заказа ${orderInfo.order_number} отправлено в бот`);
+        } catch (err) {
+          console.error('❌ Ошибка отправки уведомления об отмене в бот:', err);
+        }
+      }
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -239,11 +306,16 @@ app.post('/api/order', async (req, res) => {
       seller_id = addrResult.rows[0].seller_id;
     }
 
+    // Получаем содержимое корзины с вариантами и рассчитываем price_seller
     const cartResult = await pool.query(`
       SELECT 
         c.product_id, c.variant_id, c.quantity, c.price_at_time,
         p.name,
-        v.name as variant_name
+        v.name as variant_name,
+        p.purchase_price_kg,
+        v.weight_kg,
+        v.packaging_cost,
+        v.price
       FROM carts c
       JOIN products p ON c.product_id = p.id
       LEFT JOIN product_variants v ON c.variant_id = v.id
@@ -258,13 +330,20 @@ app.post('/api/order', async (req, res) => {
     const orderItems = cartResult.rows.map(row => {
       const itemTotal = row.price_at_time * row.quantity;
       total += itemTotal;
+      
+      // Рассчитываем price_seller для сохранения в заказе
+      const base_cost = (row.purchase_price_kg * row.weight_kg) + (row.packaging_cost || 0);
+      const avg_price = (row.price + base_cost) / 2;
+      const price_seller = Math.ceil(avg_price / 10) * 10;
+      
       return {
         productId: row.product_id,
         variantId: row.variant_id,
         name: row.name,
         variantName: row.variant_name,
         quantity: row.quantity,
-        price: row.price_at_time,
+        price: row.price_at_time, // цена покупателя на момент покупки
+        price_seller: price_seller // рассчитанная цена продавца
       };
     });
 
@@ -283,6 +362,7 @@ app.post('/api/order', async (req, res) => {
 
     console.log('Новый заказ:', { id: orderId, userId: numUserId, items: orderItems, total, contact, seller_id, address_id, requestId });
 
+    // Отправка заказа в бота
     let orderNumberFromBot = null;
     if (process.env.BOT_URL) {
       const botOrderData = {
@@ -313,7 +393,7 @@ app.post('/api/order', async (req, res) => {
       }
     }
 
-    res.json({ orderId: orderId, orderNumber: orderNumberFromBot }); // возвращаем и orderNumber для клиента
+    res.json({ orderId: orderId, orderNumber: orderNumberFromBot });
 
   } catch (err) {
     console.error(err);
